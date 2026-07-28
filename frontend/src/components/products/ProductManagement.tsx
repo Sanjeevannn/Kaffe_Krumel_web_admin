@@ -340,7 +340,7 @@ export default function ProductManagement({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl bg-[#F2F2F3] p-4">
+      <div className="rounded-2xl bg-[#F2F2F3] p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-1 rounded-full bg-white p-1">
             <button
@@ -404,7 +404,7 @@ export default function ProductManagement({
             </button>
 
             {subCategoryMenuOpen && (
-              <div className="absolute top-[calc(100%+8px)] left-0 z-30 w-[260px] overflow-hidden rounded-[22px] border border-[#49AE20] bg-white shadow-xl">
+              <div className="absolute top-[calc(100%+8px)] right-0 z-30 w-[260px] overflow-hidden rounded-[22px] border border-[#49AE20] bg-white shadow-xl">
                 <button
                   type="button"
                   onClick={() => {
