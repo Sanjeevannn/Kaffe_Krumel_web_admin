@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,7 +14,7 @@ import {
 interface ConfirmSaveProductDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
   productName?: string;
   message?: string;
 }
@@ -25,6 +26,17 @@ export default function ConfirmSaveProductDialog({
   productName = "this product",
   message,
 }: ConfirmSaveProductDialogProps) {
+  const [saving, setSaving] = useState(false);
+
+  const handleYes = async () => {
+    setSaving(true);
+    try {
+      await onConfirm();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -45,6 +57,7 @@ export default function ConfirmSaveProductDialog({
           <Button
             type="button"
             variant="secondary"
+            disabled={saving}
             className="h-11 flex-1 rounded-full bg-[#F2F2F3] text-gray-600 hover:bg-gray-200"
             onClick={() => onOpenChange(false)}
           >
@@ -52,13 +65,11 @@ export default function ConfirmSaveProductDialog({
           </Button>
           <Button
             type="button"
+            disabled={saving}
             className="h-11 flex-1 rounded-full bg-[#00562C] text-white hover:bg-[#004522]"
-            onClick={() => {
-              onConfirm();
-              onOpenChange(false);
-            }}
+            onClick={() => void handleYes()}
           >
-            Yes
+            {saving ? "Saving..." : "Yes"}
           </Button>
         </DialogFooter>
       </DialogContent>

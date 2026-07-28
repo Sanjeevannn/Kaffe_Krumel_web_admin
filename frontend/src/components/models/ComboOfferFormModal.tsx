@@ -15,7 +15,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   EMPTY_COMBO_OFFER_FORM,
-  OFFER_PRODUCT_CATALOG,
   parseOfferDate,
 } from "@/services/offerService";
 import type {
@@ -30,6 +29,7 @@ interface ComboOfferFormModalProps {
   open: boolean;
   mode: "create" | "edit";
   offer?: OfferRecord | null;
+  catalog?: OfferCatalogProduct[];
   onOpenChange: (open: boolean) => void;
   onSaveRequest: (data: ComboOfferFormData) => void;
 }
@@ -38,6 +38,7 @@ export default function ComboOfferFormModal({
   open,
   mode,
   offer,
+  catalog = [],
   onOpenChange,
   onSaveRequest,
 }: ComboOfferFormModalProps) {
@@ -89,12 +90,12 @@ export default function ComboOfferFormModal({
   const filteredProducts = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
-    return OFFER_PRODUCT_CATALOG.filter(
+    return catalog.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q)
     );
-  }, [search]);
+  }, [search, catalog]);
 
   const updateDate = (
     key: "start" | "end",

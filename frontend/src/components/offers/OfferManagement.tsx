@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -15,27 +15,50 @@ import SingleOfferDetailsModal from "@/components/models/SingleOfferDetailsModal
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { OFFER_CATEGORIES } from "@/services/offerService";
 import {
-  INITIAL_COMBO_OFFERS,
-  INITIAL_SINGLE_OFFERS,
-  OFFER_CATEGORIES,
-} from "@/services/offerService";
+  deleteOffer as deleteOfferApi,
+  fetchBranches,
+  fetchOffers,
+  updateOfferStatus,
+} from "@/services/remoteApi";
 import type { OfferRecord, OfferStatus, OfferTab } from "@/types";
 
 const PAGE_SIZE = 10;
 
 export default function OfferManagement() {
-  const [singleOffers, setSingleOffers] =
-    useState<OfferRecord[]>(INITIAL_SINGLE_OFFERS);
-  const [comboOffers, setComboOffers] =
-    useState<OfferRecord[]>(INITIAL_COMBO_OFFERS);
+  const [singleOffers, setSingleOffers] = useState<OfferRecord[]>([]);
+  const [comboOffers, setComboOffers] = useState<OfferRecord[]>([]);
   const [tab, setTab] = useState<OfferTab>("single");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [viewOffer, setViewOffer] = useState<OfferRecord | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  const loadOffers = async () => {
+    try {
+      const [single, combo] = await Promise.all([
+        fetchOffers("single"),
+        fetchOffers("combo"),
+      ]);
+      setSingleOffers(single);
+      setComboOffers(combo);
+    } catch (error) {
+      console.error("Failed to load offers", error);
+      setSingleOffers([]);
+      setComboOffers([]);
+    }
+  };
+
+  useEffect(() => {
+    loadOffers();
+    fetchBranches()
+      .then((branches) => setBranchOptions(branches.map((b) => b.name)))
+      .catch(() => setBranchOptions([]));
+  }, []);
 
   const source = tab === "single" ? singleOffers : comboOffers;
 
@@ -77,26 +100,41 @@ export default function OfferManagement() {
     ? (source.find((o) => o.id === viewOffer.id) ?? viewOffer)
     : null;
 
-  const updateOfferStatus = (offerId: number, status: OfferStatus) => {
-    if (tab === "single") {
-      setSingleOffers((prev) =>
-        prev.map((o) => (o.id === offerId ? { ...o, status } : o))
-      );
-    } else {
-      setComboOffers((prev) =>
-        prev.map((o) => (o.id === offerId ? { ...o, status } : o))
-      );
+  const updateOfferStatusLocal = async (
+    offerId: number,
+    status: OfferStatus,
+    offerType: OfferRecord["type"]
+  ) => {
+    try {
+      const updated = await updateOfferStatus(offerId, status);
+      if (offerType === "single") {
+        setSingleOffers((prev) =>
+          prev.map((o) => (o.id === offerId ? updated : o))
+        );
+      } else {
+        setComboOffers((prev) =>
+          prev.map((o) => (o.id === offerId ? updated : o))
+        );
+      }
+      setViewOffer((prev) => (prev?.id === offerId ? updated : prev));
+    } catch (error) {
+      console.error("Failed to update offer status", error);
     }
   };
 
-  const deleteOffer = (offerId: number) => {
-    if (tab === "single") {
-      setSingleOffers((prev) => prev.filter((o) => o.id !== offerId));
-    } else {
-      setComboOffers((prev) => prev.filter((o) => o.id !== offerId));
+  const deleteOffer = async (offerId: number, offerType: OfferRecord["type"]) => {
+    try {
+      await deleteOfferApi(offerId);
+      if (offerType === "single") {
+        setSingleOffers((prev) => prev.filter((o) => o.id !== offerId));
+      } else {
+        setComboOffers((prev) => prev.filter((o) => o.id !== offerId));
+      }
+      setDetailsOpen(false);
+      setViewOffer(null);
+    } catch (error) {
+      console.error("Failed to delete offer", error);
     }
-    setDetailsOpen(false);
-    setViewOffer(null);
   };
 
   return (
@@ -112,8 +150,11 @@ export default function OfferManagement() {
             className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
           >
             <option value="all">Select Branch</option>
-            <option value="Branch1">Branch1</option>
-            <option value="Jaffna Branch1">Jaffna Branch1</option>
+            {branchOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
           <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
         </div>
@@ -336,8 +377,16 @@ export default function OfferManagement() {
           setDetailsOpen(open);
           if (!open) setViewOffer(null);
         }}
-        onToggleStatus={updateOfferStatus}
-        onDelete={deleteOffer}
+        onToggleStatus={(offerId, status) => {
+          if (currentViewOffer) {
+            updateOfferStatusLocal(offerId, status, currentViewOffer.type);
+          }
+        }}
+        onDelete={(offerId) => {
+          if (currentViewOffer) {
+            deleteOffer(offerId, currentViewOffer.type);
+          }
+        }}
       />
 
       <ComboOfferDetailsModal
@@ -347,8 +396,16 @@ export default function OfferManagement() {
           setDetailsOpen(open);
           if (!open) setViewOffer(null);
         }}
-        onToggleStatus={updateOfferStatus}
-        onDelete={deleteOffer}
+        onToggleStatus={(offerId, status) => {
+          if (currentViewOffer) {
+            updateOfferStatusLocal(offerId, status, currentViewOffer.type);
+          }
+        }}
+        onDelete={(offerId) => {
+          if (currentViewOffer) {
+            deleteOffer(offerId, currentViewOffer.type);
+          }
+        }}
       />
     </>
   );

@@ -11,9 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  EMPTY_PRODUCT_FORM,
-} from "@/services/productService";
+import { EMPTY_PRODUCT_FORM } from "@/services/productService";
+import { ApiError, uploadImageFile } from "@/lib/api";
 import type { ProductFormData, ProductRecord } from "@/types";
 
 interface ProductFormModalProps {
@@ -35,6 +34,7 @@ export default function ProductFormModal({
 }: ProductFormModalProps) {
   const [form, setForm] = useState<ProductFormData>(EMPTY_PRODUCT_FORM);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function ProductFormModal({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleFile = (file: File | undefined) => {
+  const handleFile = async (file: File | undefined) => {
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
       setError("Only PNG/JPG formats are allowed.");
@@ -70,14 +70,34 @@ export default function ProductFormModal({
       setError("Image must be up to 10mb.");
       return;
     }
+
+    setUploading(true);
     setError("");
-    const url = URL.createObjectURL(file);
-    updateField("image", url);
+    try {
+      const url = await uploadImageFile(file);
+      updateField("image", url);
+    } catch (err) {
+      const message =
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : "Image upload failed";
+      setError(message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSave = () => {
+    if (uploading) {
+      setError("Please wait for image upload to finish.");
+      return;
+    }
     if (!form.image) {
       setError("Please add a product image.");
+      return;
+    }
+    if (form.image.startsWith("blob:")) {
+      setError("Image upload incomplete. Please select the image again.");
       return;
     }
     if (!form.name.trim() || !form.subCategory || !form.price.trim()) {
@@ -92,11 +112,11 @@ export default function ProductFormModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[94vh] max-w-md overflow-hidden rounded-3xl border-none p-0 shadow-xl"
+        className="max-h-[min(92vh,640px)] w-[min(92vw,420px)] overflow-hidden rounded-3xl border-none p-0 shadow-xl"
       >
-        <div className="max-h-[94vh] space-y-4 overflow-y-auto p-4 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <DialogHeader className="flex flex-row items-center justify-between space-y-0">
-            <DialogTitle className="text-xl font-bold text-[#00562C]">
+        <div className="flex max-h-[min(92vh,640px)] flex-col gap-2.5 overflow-hidden p-4 sm:p-5">
+          <DialogHeader className="shrink-0 flex-row items-center justify-between space-y-0">
+            <DialogTitle className="text-lg font-bold text-[#00562C]">
               {mode === "create" ? "Add Food" : "Edit Food"}
             </DialogTitle>
             <button
@@ -109,48 +129,49 @@ export default function ProductFormModal({
             </button>
           </DialogHeader>
 
-          <Field label="Image Image">
+          <Field label="Image">
             {form.image ? (
-              <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-[#F2F2F3]">
+              <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-[#F2F2F3]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={form.image}
                   alt="Product preview"
-                  className="mx-auto max-h-44 w-full object-contain p-4"
+                  className="mx-auto h-24 w-full object-contain p-2"
                 />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg bg-[#e8f5ee] px-3 py-1.5 text-sm font-medium text-[#00562C]"
+                  className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-lg bg-[#e8f5ee] px-2.5 py-1 text-xs font-medium text-[#00562C]"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src="/edit.svg" alt="" className="size-3.5" />
+                  <img src="/edit.svg" alt="" className="size-3" />
                   Edit
                 </button>
               </div>
             ) : (
               <div
-                className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white px-4 py-8 text-center"
+                className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 bg-white px-3 py-3 text-center"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
-                  handleFile(e.dataTransfer.files?.[0]);
+                  void handleFile(e.dataTransfer.files?.[0]);
                 }}
               >
-                <Upload className="size-8 text-gray-400" />
-                <p className="text-sm font-medium text-gray-700">
+                <Upload className="size-6 text-gray-400" />
+                <p className="text-xs font-medium text-gray-700">
                   Choose a file or drag & drop it here
                 </p>
-                <p className="text-xs text-gray-400">
+                <p className="text-[11px] text-gray-400">
                   PNG/JPG formats up to 10mb
                 </p>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
-                  className="mt-1 h-9 rounded-lg border-gray-300 bg-white px-4 text-sm text-gray-700"
+                  disabled={uploading}
+                  className="mt-0.5 h-8 rounded-lg border-gray-300 bg-white px-3 text-xs text-gray-700"
                 >
-                  Browse file
+                  {uploading ? "Uploading..." : "Browse file"}
                 </Button>
               </div>
             )}
@@ -159,7 +180,7 @@ export default function ProductFormModal({
               type="file"
               accept="image/png,image/jpeg,image/jpg"
               className="hidden"
-              onChange={(e) => handleFile(e.target.files?.[0])}
+              onChange={(e) => void handleFile(e.target.files?.[0])}
             />
           </Field>
 
@@ -168,7 +189,7 @@ export default function ProductFormModal({
               placeholder="eg; Sandwich"
               value={form.name}
               onChange={(e) => updateField("name", e.target.value)}
-              className="h-11 rounded-xl border-none bg-[#F2F2F3] px-4 shadow-none"
+              className="h-9 rounded-xl border-none bg-[#F2F2F3] px-3 text-sm shadow-none"
             />
           </Field>
 
@@ -177,7 +198,7 @@ export default function ProductFormModal({
               <select
                 value={form.subCategory}
                 onChange={(e) => updateField("subCategory", e.target.value)}
-                className="h-11 w-full appearance-none rounded-xl bg-[#F2F2F3] px-4 pr-10 text-sm outline-none"
+                className="h-9 w-full appearance-none rounded-xl bg-[#F2F2F3] px-3 pr-9 text-sm outline-none"
               >
                 <option value="">Select</option>
                 {subCategories.map((cat) => (
@@ -186,20 +207,20 @@ export default function ProductFormModal({
                   </option>
                 ))}
               </select>
-              <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-gray-500" />
+              <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
             </div>
           </Field>
 
           <Field label="Price">
             <div className="relative">
-              <span className="absolute top-1/2 left-4 -translate-y-1/2 text-sm text-gray-500">
+              <span className="absolute top-1/2 left-3 -translate-y-1/2 text-sm text-gray-500">
                 €
               </span>
               <Input
                 placeholder="1,20"
                 value={form.price}
                 onChange={(e) => updateField("price", e.target.value)}
-                className="h-11 rounded-xl border-none bg-[#F2F2F3] py-2 pr-4 pl-8 shadow-none"
+                className="h-9 rounded-xl border-none bg-[#F2F2F3] py-1.5 pr-3 pl-7 text-sm shadow-none"
               />
             </div>
           </Field>
@@ -209,18 +230,19 @@ export default function ProductFormModal({
               placeholder="eg; Start your day with our fresh bakery & tea combo"
               value={form.description}
               onChange={(e) => updateField("description", e.target.value)}
-              className="h-11 rounded-xl border-none bg-[#F2F2F3] px-4 shadow-none"
+              className="h-9 rounded-xl border-none bg-[#F2F2F3] px-3 text-sm shadow-none"
             />
           </Field>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error ? <p className="shrink-0 text-xs text-red-500">{error}</p> : null}
 
           <Button
             type="button"
             onClick={handleSave}
-            className="h-11 w-full rounded-full bg-[#00562C] text-white hover:bg-[#004522]"
+            disabled={uploading}
+            className="mt-0.5 h-10 w-full shrink-0 rounded-full bg-[#00562C] text-sm text-white hover:bg-[#004522]"
           >
-            Save
+            {uploading ? "Uploading image..." : "Save"}
           </Button>
         </div>
       </DialogContent>
@@ -236,8 +258,8 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-semibold text-gray-900">{label}</Label>
+    <div className="shrink-0 space-y-1">
+      <Label className="text-xs font-semibold text-gray-900">{label}</Label>
       {children}
     </div>
   );

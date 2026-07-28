@@ -1,48 +1,52 @@
-import type { AuthenticatedUser, UserRole } from "@/types";
+import { api } from "@/lib/api";
+import {
+  clearAuthStorage,
+  setStoredUser,
+  setTokens,
+} from "@/lib/tokenStorage";
+import type { AuthUser } from "@/types";
 
-interface DemoUser {
-  email: string;
-  password: string;
-  role: UserRole;
-  name: string;
-  redirectTo: string;
+interface LoginResponse {
+  accessToken: string;
+  refreshToken: string;
+  user: AuthUser & { redirectTo: string };
 }
 
-export const DEMO_USERS: DemoUser[] = [
-  {
-    email: "superadmin@kaffe.com",
-    password: "superadmin123",
-    role: "superadmin",
-    name: "Super Admin",
-    redirectTo: "/superadmin/dashboard",
-  },
-  {
-    email: "admin@kaffe.com",
-    password: "admin123",
-    role: "admin",
-    name: "Admin",
-    redirectTo: "/admin/dashboard",
-  },
-];
+export async function loginWithApi(email: string, password: string) {
+  const data = await api.post<LoginResponse>("/api/auth/login", {
+    email,
+    password,
+  });
 
-export function authenticateUser(
-  email: string,
-  password: string
-): AuthenticatedUser | null {
-  const user = DEMO_USERS.find(
-    (entry) =>
-      entry.email.toLowerCase() === email.toLowerCase() &&
-      entry.password === password
-  );
-
-  if (!user) {
-    return null;
-  }
-
-  return {
-    email: user.email,
-    role: user.role,
-    name: user.name,
-    redirectTo: user.redirectTo,
+  setTokens(data.accessToken, data.refreshToken);
+  const user: AuthUser = {
+    email: data.user.email,
+    role: data.user.role,
+    name: data.user.name,
+    branch: data.user.branch,
+    branchId: data.user.branchId,
+    staffRole: data.user.staffRole,
   };
+  setStoredUser(user);
+
+  return { user, redirectTo: data.user.redirectTo };
+}
+
+export async function fetchCurrentUser() {
+  return api.get<AuthUser & { redirectTo: string }>("/api/auth/me");
+}
+
+export async function logoutFromApi() {
+  const refreshToken =
+    typeof window !== "undefined"
+      ? localStorage.getItem("kaffe_krumel_refresh")
+      : null;
+
+  try {
+    if (refreshToken) {
+      await api.post("/api/auth/logout", { refreshToken });
+    }
+  } finally {
+    clearAuthStorage();
+  }
 }

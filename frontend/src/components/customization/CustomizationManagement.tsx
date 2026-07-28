@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -17,7 +17,13 @@ import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { INITIAL_CUSTOMIZATIONS } from "@/services/customizationService";
+import {
+  createCustomization,
+  deleteCustomization,
+  fetchCustomizations,
+  updateCustomization,
+  updateCustomizationStatus,
+} from "@/services/remoteApi";
 import type {
   CustomizationFormData,
   CustomizationRecord,
@@ -28,7 +34,7 @@ const PAGE_SIZE = 20;
 
 export default function CustomizationManagement() {
   const [customizations, setCustomizations] = useState<CustomizationRecord[]>(
-    INITIAL_CUSTOMIZATIONS
+    []
   );
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -75,6 +81,12 @@ export default function CustomizationManagement() {
 
   const resetPage = () => setCurrentPage(1);
 
+  useEffect(() => {
+    fetchCustomizations()
+      .then(setCustomizations)
+      .catch((error) => console.error("Failed to load customizations", error));
+  }, []);
+
   const deriveStatus = (groups: CustomizationFormData["groups"]): CustomizationStatus => {
     if (groups.length === 0) return "Active";
     return groups.every((g) => g.status === "Active") ? "Active" : "Inactive";
@@ -107,59 +119,55 @@ export default function CustomizationManagement() {
     setSaveConfirmOpen(true);
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     if (!pendingForm) return;
 
-    const status = deriveStatus(pendingForm.groups);
+    try {
+      if (formMode === "create") {
+        const created = await createCustomization(pendingForm);
+        setCustomizations((prev) => [created, ...prev]);
+      } else if (editingItem) {
+        const updated = await updateCustomization(editingItem.id, pendingForm);
+        setCustomizations((prev) =>
+          prev.map((c) => (c.id === editingItem.id ? updated : c))
+        );
+      }
 
-    if (formMode === "create") {
-      const nextId =
-        customizations.length > 0
-          ? Math.max(...customizations.map((c) => c.id)) + 1
-          : 1;
-      setCustomizations((prev) => [
-        {
-          id: nextId,
-          name: pendingForm.name,
-          status,
-          groups: pendingForm.groups,
-        },
-        ...prev,
-      ]);
-    } else if (editingItem) {
-      setCustomizations((prev) =>
-        prev.map((c) =>
-          c.id === editingItem.id
-            ? {
-                ...c,
-                name: pendingForm.name,
-                status,
-                groups: pendingForm.groups,
-              }
-            : c
-        )
-      );
+      setPendingForm(null);
+      setFormOpen(false);
+      setEditingItem(null);
+      setSaveConfirmOpen(false);
+    } catch (error) {
+      console.error("Failed to save customization", error);
+      setSaveConfirmOpen(false);
     }
-
-    setPendingForm(null);
-    setFormOpen(false);
-    setEditingItem(null);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteId === null) return;
-    setCustomizations((prev) => prev.filter((c) => c.id !== deleteId));
-    if (viewItem?.id === deleteId) {
-      setViewOpen(false);
-      setViewItem(null);
+    try {
+      await deleteCustomization(deleteId);
+      setCustomizations((prev) => prev.filter((c) => c.id !== deleteId));
+      if (viewItem?.id === deleteId) {
+        setViewOpen(false);
+        setViewItem(null);
+      }
+      setDeleteId(null);
+      setDeleteOpen(false);
+    } catch (error) {
+      console.error("Failed to delete customization", error);
     }
-    setDeleteId(null);
   };
 
-  const handleToggleStatus = (id: number, status: CustomizationStatus) => {
-    setCustomizations((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status } : c))
-    );
+  const handleToggleStatus = async (id: number, status: CustomizationStatus) => {
+    try {
+      const updated = await updateCustomizationStatus(id, status);
+      setCustomizations((prev) =>
+        prev.map((c) => (c.id === id ? updated : c))
+      );
+    } catch (error) {
+      console.error("Failed to update status", error);
+    }
   };
 
   return (

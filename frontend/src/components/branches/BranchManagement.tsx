@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -21,13 +21,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
-import { getBranchStats, INITIAL_BRANCHES } from "@/services/branchService";
+import {
+  createBranch,
+  deleteBranch,
+  fetchBranches,
+  fetchBranchStats,
+  updateBranch,
+  updateBranchStatus,
+} from "@/services/remoteApi";
 import type { BranchFormData, BranchRecord, BranchStatus } from "@/types";
 
 const PAGE_SIZE = 10;
 
 export default function BranchManagement() {
-  const [branches, setBranches] = useState<BranchRecord[]>(INITIAL_BRANCHES);
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
+  const [stats, setStats] = useState({
+    totalBranch: 0,
+    activeBranch: 0,
+    inactiveBranch: 0,
+  });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -61,7 +73,23 @@ export default function BranchManagement() {
     return result;
   }, [branches, search, statusFilter]);
 
-  const stats = useMemo(() => getBranchStats(branches), [branches]);
+  const loadData = async () => {
+    try {
+      const [branchList, branchStats] = await Promise.all([
+        fetchBranches(),
+        fetchBranchStats(),
+      ]);
+      setBranches(branchList);
+      setStats(branchStats);
+    } catch (error) {
+      console.error("Failed to load branches", error);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const startIndex = (safePage - 1) * PAGE_SIZE;
@@ -86,37 +114,31 @@ export default function BranchManagement() {
     setSaveConfirmOpen(true);
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     if (!pendingForm) return;
 
-    const location = `${pendingForm.street}, ${pendingForm.city}, ${pendingForm.country}`;
+    try {
+      if (formMode === "create") {
+        const created = await createBranch(pendingForm);
+        setBranches((prev) => [created, ...prev]);
+        setCurrentPage(1);
+        const branchStats = await fetchBranchStats();
+        setStats(branchStats);
+      } else if (editingBranch) {
+        const updated = await updateBranch(editingBranch.id, pendingForm);
+        setBranches((prev) =>
+          prev.map((b) => (b.id === editingBranch.id ? updated : b))
+        );
+      }
 
-    if (formMode === "create") {
-      const newBranch: BranchRecord = {
-        id: Date.now(),
-        location,
-        status: "Active",
-        ...pendingForm,
-      };
-      setBranches((prev) => [newBranch, ...prev]);
-      setCurrentPage(1);
-    } else if (editingBranch) {
-      setBranches((prev) =>
-        prev.map((b) =>
-          b.id === editingBranch.id
-            ? {
-                ...b,
-                ...pendingForm,
-                location,
-              }
-            : b
-        )
-      );
+      setPendingForm(null);
+      setFormOpen(false);
+      setEditingBranch(null);
+      setSaveConfirmOpen(false);
+    } catch (error) {
+      console.error("Failed to save branch", error);
+      setSaveConfirmOpen(false);
     }
-
-    setPendingForm(null);
-    setFormOpen(false);
-    setEditingBranch(null);
   };
 
   const openDelete = (id: number) => {
@@ -124,18 +146,31 @@ export default function BranchManagement() {
     setDeleteOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteId == null) return;
-    setBranches((prev) => prev.filter((b) => b.id !== deleteId));
-    setDeleteId(null);
-    setViewOpen(false);
-    setViewBranch(null);
+    try {
+      await deleteBranch(deleteId);
+      setBranches((prev) => prev.filter((b) => b.id !== deleteId));
+      const branchStats = await fetchBranchStats();
+      setStats(branchStats);
+      setDeleteId(null);
+      setViewOpen(false);
+      setViewBranch(null);
+      setDeleteOpen(false);
+    } catch (error) {
+      console.error("Failed to delete branch", error);
+    }
   };
 
-  const handleToggleStatus = (branchId: number, status: BranchStatus) => {
-    setBranches((prev) =>
-      prev.map((b) => (b.id === branchId ? { ...b, status } : b))
-    );
+  const handleToggleStatus = async (branchId: number, status: BranchStatus) => {
+    try {
+      const updated = await updateBranchStatus(branchId, status);
+      setBranches((prev) =>
+        prev.map((b) => (b.id === branchId ? updated : b))
+      );
+    } catch (error) {
+      console.error("Failed to update branch status", error);
+    }
   };
 
   const currentViewBranch = viewBranch

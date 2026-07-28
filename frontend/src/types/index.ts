@@ -4,6 +4,9 @@ export interface AuthUser {
   email: string;
   role: UserRole;
   name: string;
+  branch?: string;
+  branchId?: number;
+  staffRole?: "Admin" | "Cashier";
 }
 
 export interface AuthenticatedUser extends AuthUser {
@@ -18,8 +21,8 @@ export interface LoginResult {
 export interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => LoginResult;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  logout: () => Promise<void>;
 }
 
 export type NavIcon =
@@ -118,8 +121,9 @@ export type StaffStatus = "Active" | "Inactive";
 
 export interface StaffUser {
   id: number;
+  branchId: number;
   branch: string;
-  username: string;
+  email: string;
   manager: string;
   createdAt: string;
   role: StaffRole;
@@ -129,9 +133,10 @@ export interface StaffUser {
 
 export interface StaffUserFormData {
   role: StaffRole | "";
+  branchId: number | "";
   branch: string;
   manager: string;
-  username: string;
+  email: string;
   password: string;
   confirmPassword: string;
 }

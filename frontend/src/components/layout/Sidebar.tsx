@@ -113,7 +113,7 @@ export default function Sidebar({
 
       <button
         type="button"
-        onClick={logout}
+        onClick={() => void logout()}
         className="mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-400 transition-colors hover:bg-white/10"
       >
         <LogOut className="size-5" />

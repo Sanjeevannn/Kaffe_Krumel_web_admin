@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -20,15 +20,20 @@ import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { OFFER_CATEGORIES } from "@/services/offerService";
 import {
-  formatOfferDate,
-  INITIAL_COMBO_OFFERS,
-  INITIAL_SINGLE_OFFERS,
-  OFFER_CATEGORIES,
-  OFFER_DESCRIPTION,
-} from "@/services/offerService";
+  createComboOffer,
+  createSingleOffer,
+  deleteOffer as deleteOfferApi,
+  fetchOfferCatalog,
+  fetchOffers,
+  updateComboOffer,
+  updateOfferStatus,
+  updateSingleOffer,
+} from "@/services/remoteApi";
 import type {
   ComboOfferFormData,
+  OfferCatalogProduct,
   OfferRecord,
   OfferStatus,
   OfferTab,
@@ -39,10 +44,9 @@ const SINGLE_PAGE_SIZE = 10;
 const COMBO_PAGE_SIZE = 6;
 
 export default function AdminOfferManagement() {
-  const [singleOffers, setSingleOffers] =
-    useState<OfferRecord[]>(INITIAL_SINGLE_OFFERS);
-  const [comboOffers, setComboOffers] =
-    useState<OfferRecord[]>(INITIAL_COMBO_OFFERS);
+  const [singleOffers, setSingleOffers] = useState<OfferRecord[]>([]);
+  const [comboOffers, setComboOffers] = useState<OfferRecord[]>([]);
+  const [catalog, setCatalog] = useState<OfferCatalogProduct[]>([]);
   const [tab, setTab] = useState<OfferTab>("single");
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -63,6 +67,26 @@ export default function AdminOfferManagement() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  const loadOffers = async () => {
+    try {
+      const [single, combo] = await Promise.all([
+        fetchOffers("single"),
+        fetchOffers("combo"),
+      ]);
+      setSingleOffers(single);
+      setComboOffers(combo);
+    } catch (error) {
+      console.error("Failed to load offers", error);
+    }
+  };
+
+  useEffect(() => {
+    loadOffers();
+    fetchOfferCatalog()
+      .then(setCatalog)
+      .catch((error) => console.error("Failed to load offer catalog", error));
+  }, []);
 
   const source = tab === "single" ? singleOffers : comboOffers;
   const pageSize = tab === "single" ? SINGLE_PAGE_SIZE : COMBO_PAGE_SIZE;
@@ -134,144 +158,70 @@ export default function AdminOfferManagement() {
     setSaveConfirmOpen(true);
   };
 
-  const handleConfirmSave = () => {
-    if (pendingSingleForm?.product) {
-      const validityFrom = formatOfferDate(pendingSingleForm.start);
-      const validityTo = formatOfferDate(pendingSingleForm.end);
-      const offerPrice = pendingSingleForm.offerPrice.startsWith("€")
-        ? pendingSingleForm.offerPrice
-        : `€${pendingSingleForm.offerPrice}`;
-
-      if (formMode === "create") {
-        const nextId =
-          singleOffers.length > 0
-            ? Math.max(...singleOffers.map((o) => o.id)) + 1
-            : 1;
-        const newOffer: OfferRecord = {
-          id: nextId,
-          type: "single",
-          name: pendingSingleForm.product.name,
-          category: pendingSingleForm.product.category,
-          status: "Active",
-          image: pendingSingleForm.product.image,
-          validityFrom,
-          validityTo,
-          offerPrice,
-          originalPrice: pendingSingleForm.product.price,
-          description: OFFER_DESCRIPTION,
-        };
-        setSingleOffers((prev) => [newOffer, ...prev]);
-        setCurrentPage(1);
-      } else if (editingOffer) {
-        const updated: OfferRecord = {
-          ...editingOffer,
-          name: pendingSingleForm.product.name,
-          category: pendingSingleForm.product.category,
-          image: pendingSingleForm.product.image,
-          validityFrom,
-          validityTo,
-          offerPrice,
-          originalPrice: pendingSingleForm.product.price,
-        };
-        setSingleOffers((prev) =>
-          prev.map((o) => (o.id === editingOffer.id ? updated : o))
-        );
-        setViewOffer(updated);
+  const handleConfirmSave = async () => {
+    try {
+      if (pendingSingleForm?.product) {
+        if (formMode === "create") {
+          await createSingleOffer(pendingSingleForm);
+        } else if (editingOffer) {
+          await updateSingleOffer(editingOffer.id, pendingSingleForm);
+        }
+        setPendingSingleForm(null);
+        setSingleFormOpen(false);
+        setEditingOffer(null);
+        setSaveConfirmOpen(false);
+        await loadOffers();
+        return;
       }
 
-      setPendingSingleForm(null);
-      setSingleFormOpen(false);
-      setEditingOffer(null);
-      return;
-    }
-
-    if (pendingComboForm) {
-      const validityFrom = formatOfferDate(pendingComboForm.start);
-      const validityTo = formatOfferDate(pendingComboForm.end);
-      const totalDiscount = pendingComboForm.products.reduce((sum, p) => {
-        const value = Number(String(p.discount).replace(",", "."));
-        return sum + (Number.isFinite(value) ? value : 0);
-      }, 0);
-      const offerPrice = `€${totalDiscount.toFixed(2)}`;
-      const itemsSummary = pendingComboForm.products
-        .map((p) => `${p.quantity} ${p.name}`)
-        .join(" + ");
-      const products = pendingComboForm.products.map((p, index) => ({
-        id: p.productId || index + 1,
-        name: p.name,
-        category: p.category,
-        price: p.price,
-        image: p.image,
-        quantity: p.quantity,
-        discount: p.discount,
-      }));
-
-      if (formMode === "create") {
-        const nextId =
-          comboOffers.length > 0
-            ? Math.max(...comboOffers.map((o) => o.id)) + 1
-            : 101;
-        const newOffer: OfferRecord = {
-          id: nextId,
-          type: "combo",
-          name: pendingComboForm.title,
-          category: "Combo",
-          status: "Active",
-          image: pendingComboForm.image,
-          validityFrom,
-          validityTo,
-          offerPrice,
-          description: pendingComboForm.description || OFFER_DESCRIPTION,
-          itemsSummary,
-          products,
-        };
-        setComboOffers((prev) => [newOffer, ...prev]);
-        setTab("combo");
-        setCurrentPage(1);
-      } else if (editingOffer) {
-        const updated: OfferRecord = {
-          ...editingOffer,
-          name: pendingComboForm.title,
-          image: pendingComboForm.image,
-          validityFrom,
-          validityTo,
-          offerPrice,
-          description: pendingComboForm.description || OFFER_DESCRIPTION,
-          itemsSummary,
-          products,
-        };
-        setComboOffers((prev) =>
-          prev.map((o) => (o.id === editingOffer.id ? updated : o))
-        );
-        setViewOffer(updated);
+      if (pendingComboForm) {
+        if (formMode === "create") {
+          await createComboOffer(pendingComboForm);
+          setTab("combo");
+          setCurrentPage(1);
+        } else if (editingOffer) {
+          await updateComboOffer(editingOffer.id, pendingComboForm);
+        }
+        setPendingComboForm(null);
+        setComboFormOpen(false);
+        setEditingOffer(null);
+        setSaveConfirmOpen(false);
+        await loadOffers();
       }
-
-      setPendingComboForm(null);
-      setComboFormOpen(false);
-      setEditingOffer(null);
+    } catch (error) {
+      console.error("Failed to save offer", error);
+      setSaveConfirmOpen(false);
     }
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteId == null) return;
-    setSingleOffers((prev) => prev.filter((o) => o.id !== deleteId));
-    setComboOffers((prev) => prev.filter((o) => o.id !== deleteId));
-    if (viewOffer?.id === deleteId) {
-      setViewOpen(false);
-      setViewOffer(null);
+    try {
+      await deleteOfferApi(deleteId);
+      if (viewOffer?.id === deleteId) {
+        setViewOpen(false);
+        setViewOffer(null);
+      }
+      setDeleteId(null);
+      setDeleteOpen(false);
+      await loadOffers();
+    } catch (error) {
+      console.error("Failed to delete offer", error);
     }
-    setDeleteId(null);
   };
 
-  const handleToggleStatus = (offerId: number, status: OfferStatus) => {
-    if (tab === "single") {
+  const handleToggleStatus = async (offerId: number, status: OfferStatus) => {
+    try {
+      const updated = await updateOfferStatus(offerId, status);
       setSingleOffers((prev) =>
-        prev.map((o) => (o.id === offerId ? { ...o, status } : o))
+        prev.map((o) => (o.id === offerId ? updated : o))
       );
-    } else {
       setComboOffers((prev) =>
-        prev.map((o) => (o.id === offerId ? { ...o, status } : o))
+        prev.map((o) => (o.id === offerId ? updated : o))
       );
+      setViewOffer((prev) => (prev?.id === offerId ? updated : prev));
+    } catch (error) {
+      console.error("Failed to update offer status", error);
     }
   };
 
@@ -562,6 +512,7 @@ export default function AdminOfferManagement() {
         open={singleFormOpen}
         mode={formMode}
         offer={editingOffer?.type === "single" ? editingOffer : null}
+        catalog={catalog}
         onOpenChange={(open) => {
           setSingleFormOpen(open);
           if (!open) setEditingOffer(null);
@@ -573,6 +524,7 @@ export default function AdminOfferManagement() {
         open={comboFormOpen}
         mode={formMode}
         offer={editingOffer?.type === "combo" ? editingOffer : null}
+        catalog={catalog}
         onOpenChange={(open) => {
           setComboFormOpen(open);
           if (!open) setEditingOffer(null);

@@ -11,14 +11,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { USER_BRANCHES } from "@/services/userService";
-import type { StaffRole, StaffUser, StaffUserFormData } from "@/types";
+import type {
+  BranchRecord,
+  StaffRole,
+  StaffUser,
+  StaffUserFormData,
+} from "@/types";
 
 const EMPTY_FORM: StaffUserFormData = {
   role: "",
+  branchId: "",
   branch: "",
   manager: "",
-  username: "",
+  email: "",
   password: "",
   confirmPassword: "",
 };
@@ -27,6 +32,7 @@ interface UserFormModalProps {
   open: boolean;
   mode: "create" | "edit";
   user?: StaffUser | null;
+  branches?: BranchRecord[];
   onOpenChange: (open: boolean) => void;
   onSubmit: (data: StaffUserFormData) => void;
 }
@@ -35,22 +41,26 @@ export default function UserFormModal({
   open,
   mode,
   user,
+  branches = [],
   onOpenChange,
   onSubmit,
 }: UserFormModalProps) {
   const [form, setForm] = useState<StaffUserFormData>(EMPTY_FORM);
   const [error, setError] = useState("");
 
+  const activeBranches = branches.filter((b) => b.status === "Active");
+
   useEffect(() => {
     if (!open) return;
     if (mode === "edit" && user) {
       setForm({
         role: user.role,
+        branchId: user.branchId,
         branch: user.branch,
         manager: user.manager,
-        username: user.username,
-        password: user.password ?? "",
-        confirmPassword: user.password ?? "",
+        email: user.email,
+        password: "",
+        confirmPassword: "",
       });
     } else {
       setForm(EMPTY_FORM);
@@ -60,11 +70,25 @@ export default function UserFormModal({
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (!form.role || !form.branch || !form.manager.trim() || !form.username.trim()) {
-      setError("Please fill all required fields.");
+    if (
+      !form.role ||
+      form.branchId === "" ||
+      !form.branch ||
+      !form.email.trim()
+    ) {
+      setError("Please select role, branch and enter email.");
       return;
     }
-    if (!form.password || form.password !== form.confirmPassword) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    if (mode === "create") {
+      if (!form.password || form.password !== form.confirmPassword) {
+        setError("Password and Confirm Password must match.");
+        return;
+      }
+    } else if (form.password && form.password !== form.confirmPassword) {
       setError("Password and Confirm Password must match.");
       return;
     }
@@ -77,6 +101,24 @@ export default function UserFormModal({
     value: StaffUserFormData[K]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleBranchChange = (branchIdValue: string) => {
+    if (!branchIdValue) {
+      updateField("branchId", "");
+      updateField("branch", "");
+      updateField("manager", "");
+      return;
+    }
+    const id = Number(branchIdValue);
+    const selected = activeBranches.find((b) => b.id === id);
+    if (!selected) return;
+    setForm((prev) => ({
+      ...prev,
+      branchId: selected.id,
+      branch: selected.name,
+      manager: selected.manager || prev.manager,
+    }));
   };
 
   return (
@@ -120,35 +162,41 @@ export default function UserFormModal({
           <Field label="Branch">
             <div className="relative">
               <select
-                value={form.branch}
-                onChange={(e) => updateField("branch", e.target.value)}
+                value={form.branchId === "" ? "" : String(form.branchId)}
+                onChange={(e) => handleBranchChange(e.target.value)}
                 className="h-10 w-full appearance-none rounded-full bg-[#F2F2F3] px-4 pr-10 text-sm outline-none"
               >
                 <option value="">Select</option>
-                {USER_BRANCHES.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
+                {activeBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
                   </option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-gray-500" />
             </div>
+            {activeBranches.length === 0 ? (
+              <p className="text-xs text-amber-600">
+                No active branches. Create a branch first in Branch management.
+              </p>
+            ) : null}
           </Field>
 
           <Field label="Branch Manager">
             <Input
-              placeholder="eg; John Doe"
+              placeholder="Auto-filled from branch"
               value={form.manager}
               onChange={(e) => updateField("manager", e.target.value)}
               className="h-10 rounded-full border-none bg-[#F2F2F3] px-4 shadow-none"
             />
           </Field>
 
-          <Field label="User name">
+          <Field label="Email">
             <Input
-              placeholder="eg; Friedrichstraße 120"
-              value={form.username}
-              onChange={(e) => updateField("username", e.target.value)}
+              type="email"
+              placeholder="eg; admin@branch.com"
+              value={form.email}
+              onChange={(e) => updateField("email", e.target.value)}
               className="h-10 rounded-full border-none bg-[#F2F2F3] px-4 shadow-none"
             />
           </Field>
@@ -177,6 +225,7 @@ export default function UserFormModal({
 
           <Button
             type="submit"
+            disabled={activeBranches.length === 0 && mode === "create"}
             className="mt-1 h-11 w-full rounded-full bg-[#00562C] text-base font-semibold text-white hover:bg-[#004522]"
           >
             Save

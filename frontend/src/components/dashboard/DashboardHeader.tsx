@@ -14,9 +14,11 @@ export default function DashboardHeader({
   const roleLabel =
     user?.role === "superadmin"
       ? "Superadmin"
-      : user?.role === "admin"
-        ? "Admin"
-        : "Admin";
+      : user?.staffRole
+        ? `${user.staffRole}${user.branch ? ` · ${user.branch}` : ""}`
+        : user?.role === "admin"
+          ? "Admin"
+          : "Admin";
 
   return (
     <header className="flex items-center justify-between gap-3 rounded-2xl bg-[#F2F2F3] px-4 py-3 sm:px-6 sm:py-4">

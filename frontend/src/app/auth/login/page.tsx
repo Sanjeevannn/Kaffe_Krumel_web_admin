@@ -29,12 +29,12 @@ export default function LoginPage() {
     }
   }, [user, loading, router]);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
     setError("");
 
-    const result = login(email, password);
+    const result = await login(email, password);
     if (!result.success) {
       setError(result.message ?? "Login failed");
     }

@@ -21,6 +21,7 @@ import {
   DRINK_GROUPS,
   EMPTY_PRODUCT_FORM,
 } from "@/services/productService";
+import { ApiError, uploadImageFile } from "@/lib/api";
 import type {
   DrinkInclusiveItem,
   DrinkSizeOption,
@@ -51,6 +52,7 @@ export default function DrinkFormModal({
     sizes: [createEmptySize(1)],
   });
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -121,7 +123,7 @@ export default function DrinkFormModal({
     );
   };
 
-  const handleFile = (file?: File) => {
+  const handleFile = async (file?: File) => {
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
       setError("Only PNG/JPG formats are allowed.");
@@ -131,14 +133,35 @@ export default function DrinkFormModal({
       setError("Image must be up to 10mb.");
       return;
     }
+
+    setUploading(true);
     setError("");
-    updateField("image", URL.createObjectURL(file));
+    try {
+      const url = await uploadImageFile(file);
+      updateField("image", url);
+    } catch (err) {
+      const message =
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : "Image upload failed";
+      setError(message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleNext = () => {
+    if (uploading) {
+      setError("Please wait for image upload to finish.");
+      return;
+    }
     if (step === 1) {
       if (!form.image || !form.name.trim() || !form.subCategory) {
         setError("Please add an image, Product name and Sub Category.");
+        return;
+      }
+      if (form.image.startsWith("blob:")) {
+        setError("Image upload incomplete. Please select the image again.");
         return;
       }
       setError("");
@@ -171,15 +194,15 @@ export default function DrinkFormModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[94vh] max-w-lg overflow-hidden rounded-3xl border-none p-0 shadow-xl"
+        className="max-h-[min(92vh,640px)] w-[min(92vw,420px)] overflow-hidden rounded-3xl border-none p-0 shadow-xl"
       >
-        <div className="max-h-[94vh] space-y-4 overflow-y-auto p-4 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <DialogHeader className="flex flex-row items-start justify-between space-y-0">
+        <div className="flex max-h-[min(92vh,640px)] flex-col gap-2.5 overflow-y-auto p-4 sm:p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <DialogHeader className="shrink-0 flex-row items-start justify-between space-y-0">
             <div>
-              <DialogTitle className="text-xl font-bold text-gray-900">
+              <DialogTitle className="text-lg font-bold text-gray-900">
                 {mode === "create" ? "Add Drinks" : "Edit Drinks"}
               </DialogTitle>
-              <p className="mt-1 text-xs text-gray-700">
+              <p className="mt-0.5 text-xs text-gray-700">
                 Step {String(step).padStart(2, "0")} to 02
               </p>
             </div>
@@ -193,7 +216,7 @@ export default function DrinkFormModal({
             </button>
           </DialogHeader>
 
-          <div className="h-2 overflow-hidden rounded-full bg-[#E7E7E8]">
+          <div className="h-1.5 shrink-0 overflow-hidden rounded-full bg-[#E7E7E8]">
             <div
               className="h-full rounded-full bg-[#00562C] transition-all"
               style={{ width: `${step * 50}%` }}
@@ -201,50 +224,51 @@ export default function DrinkFormModal({
           </div>
 
           {step === 1 ? (
-            <div className="space-y-4">
-              <h3 className="text-base font-semibold">1. Basic information</h3>
-              <Field label="Image Image">
+            <div className="space-y-2.5">
+              <h3 className="text-sm font-semibold">1. Basic information</h3>
+              <Field label="Image">
                 {form.image ? (
-                  <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-2xl border border-gray-200 bg-[#F2F2F3]">
+                  <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-[#F2F2F3]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={form.image}
                       alt="Drink preview"
-                      className="max-h-24 w-auto object-contain"
+                      className="mx-auto h-24 w-full object-contain p-2"
                     />
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg bg-[#C9F0CE] px-3 py-1.5 text-sm text-[#00562C]"
+                      className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-lg bg-[#C9F0CE] px-2.5 py-1 text-xs text-[#00562C]"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src="/edit.svg" alt="" className="size-3.5" />
+                      <img src="/edit.svg" alt="" className="size-3" />
                       Edit
                     </button>
                   </div>
                 ) : (
                   <div
-                    className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 px-4 py-8 text-center"
+                    className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-gray-300 px-3 py-3 text-center"
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={(e) => {
                       e.preventDefault();
-                      handleFile(e.dataTransfer.files?.[0]);
+                      void handleFile(e.dataTransfer.files?.[0]);
                     }}
                   >
-                    <Upload className="size-8 text-[#00562C]" />
-                    <p className="text-sm font-medium">
+                    <Upload className="size-6 text-[#00562C]" />
+                    <p className="text-xs font-medium">
                       Choose a file or drag & drop it here
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-[11px] text-gray-400">
                       PNG/JPG formats up to 10mb
                     </p>
                     <Button
                       type="button"
                       variant="outline"
                       onClick={() => fileInputRef.current?.click()}
-                      className="h-9 rounded-lg border-gray-300"
+                      disabled={uploading}
+                      className="mt-0.5 h-8 rounded-lg border-gray-300 px-3 text-xs"
                     >
-                      Browse file
+                      {uploading ? "Uploading..." : "Browse file"}
                     </Button>
                   </div>
                 )}
@@ -253,7 +277,7 @@ export default function DrinkFormModal({
                   type="file"
                   accept="image/png,image/jpeg,image/jpg"
                   className="hidden"
-                  onChange={(e) => handleFile(e.target.files?.[0])}
+                  onChange={(e) => void handleFile(e.target.files?.[0])}
                 />
               </Field>
 
@@ -262,7 +286,7 @@ export default function DrinkFormModal({
                   placeholder="eg; American Macha"
                   value={form.name}
                   onChange={(e) => updateField("name", e.target.value)}
-                  className="h-11 rounded-xl border-none bg-[#F2F2F3]"
+                  className="h-9 rounded-xl border-none bg-[#F2F2F3] text-sm"
                 />
               </Field>
 
@@ -273,7 +297,7 @@ export default function DrinkFormModal({
                     onChange={(e) =>
                       updateField("subCategory", e.target.value)
                     }
-                    className="h-11 w-full appearance-none rounded-xl bg-[#F2F2F3] px-4 pr-10 text-sm outline-none"
+                    className="h-9 w-full appearance-none rounded-xl bg-[#F2F2F3] px-3 pr-9 text-sm outline-none"
                   >
                     <option value="">Select</option>
                     {subCategories.map((category) => (
@@ -282,7 +306,7 @@ export default function DrinkFormModal({
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-gray-500" />
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
                 </div>
               </Field>
             </div>
@@ -512,9 +536,9 @@ export default function DrinkFormModal({
             </div>
           )}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error ? <p className="shrink-0 text-xs text-red-500">{error}</p> : null}
 
-          <div className="flex gap-3">
+          <div className="flex shrink-0 gap-2.5">
             {step === 2 && (
               <Button
                 type="button"
@@ -523,7 +547,7 @@ export default function DrinkFormModal({
                   setError("");
                   setStep(1);
                 }}
-                className="h-11 flex-1 rounded-full bg-[#F2F2F3]"
+                className="h-10 flex-1 rounded-full bg-[#F2F2F3] text-sm"
               >
                 Previous
               </Button>
@@ -531,9 +555,10 @@ export default function DrinkFormModal({
             <Button
               type="button"
               onClick={handleNext}
-              className="h-11 flex-1 rounded-full bg-[#00562C] text-white hover:bg-[#004522]"
+              disabled={uploading}
+              className="h-10 flex-1 rounded-full bg-[#00562C] text-sm text-white hover:bg-[#004522]"
             >
-              Next
+              {uploading ? "Uploading..." : "Next"}
             </Button>
           </div>
         </div>
@@ -544,8 +569,8 @@ export default function DrinkFormModal({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-semibold text-gray-900">{label}</Label>
+    <div className="shrink-0 space-y-1">
+      <Label className="text-xs font-semibold text-gray-900">{label}</Label>
       {children}
     </div>
   );

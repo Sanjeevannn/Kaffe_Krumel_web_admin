@@ -11,8 +11,9 @@ export const INITIAL_USERS: StaffUser[] = Array.from({ length: 30 }, (_, i) => {
   const isAdmin = i % 3 !== 2;
   return {
     id: i + 1,
+    branchId: (i % 3) + 1,
     branch: `Branch ${(i % 3) + 1}`,
-    username: isAdmin ? `Admin${(i % 5) + 1}` : `Cashier${(i % 4) + 1}`,
+    email: isAdmin ? `admin${(i % 5) + 1}@kaffe.com` : `cashier${(i % 4) + 1}@kaffe.com`,
     manager: "Kishana",
     createdAt: "12/02/2025",
     role: isAdmin ? "Admin" : "Cashier",

@@ -15,7 +15,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   EMPTY_SINGLE_OFFER_FORM,
-  OFFER_PRODUCT_CATALOG,
   parseOfferDate,
 } from "@/services/offerService";
 import type {
@@ -29,6 +28,7 @@ interface SingleOfferFormModalProps {
   open: boolean;
   mode: "create" | "edit";
   offer?: OfferRecord | null;
+  catalog?: OfferCatalogProduct[];
   onOpenChange: (open: boolean) => void;
   onSaveRequest: (data: SingleOfferFormData) => void;
 }
@@ -37,6 +37,7 @@ export default function SingleOfferFormModal({
   open,
   mode,
   offer,
+  catalog = [],
   onOpenChange,
   onSaveRequest,
 }: SingleOfferFormModalProps) {
@@ -58,7 +59,7 @@ export default function SingleOfferFormModal({
 
     if (mode === "edit" && offer) {
       const catalogMatch =
-        OFFER_PRODUCT_CATALOG.find(
+        catalog.find(
           (p) =>
             p.name.toLowerCase() === offer.name.toLowerCase() ||
             p.image === offer.image
@@ -83,17 +84,17 @@ export default function SingleOfferFormModal({
 
     setForm(EMPTY_SINGLE_OFFER_FORM);
     setPriceDraft("");
-  }, [open, mode, offer]);
+  }, [open, mode, offer, catalog]);
 
   const filteredProducts = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
-    return OFFER_PRODUCT_CATALOG.filter(
+    return catalog.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q)
     );
-  }, [search]);
+  }, [search, catalog]);
 
   const hasAddedProduct = Boolean(form.product);
   const actionLabel = hasAddedProduct ? "Update" : "Add";

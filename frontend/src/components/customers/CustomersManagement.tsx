@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -20,29 +20,71 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
 import {
-  CLOSURE_REASONS,
-  getCustomerStats,
-  INITIAL_CUSTOMERS,
-} from "@/services/customerService";
-import type { Customer, CustomerTab } from "@/types";
+  fetchBranches,
+  fetchClosureAnalysis,
+  fetchCustomers,
+  fetchCustomerStats,
+} from "@/services/remoteApi";
+import type { ClosureReasonStat, Customer, CustomerTab } from "@/types";
 
 const PAGE_SIZE = 10;
 
 export default function CustomersManagement() {
-  const [customers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [stats, setStats] = useState({
+    totalCustomers: 0,
+    totalNewCustomers: 0,
+    accountDeleted: 0,
+  });
+  const [closureReasons, setClosureReasons] = useState<ClosureReasonStat[]>([]);
   const [tab, setTab] = useState<CustomerTab>("directory");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [viewCustomer, setViewCustomer] = useState<Customer | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+
+  useEffect(() => {
+    fetchBranches()
+      .then((branches) => setBranchOptions(branches.map((b) => b.name)))
+      .catch(() => setBranchOptions([]));
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [list, customerStats, closure] = await Promise.all([
+          fetchCustomers({
+            search: search.trim() || undefined,
+            status: statusFilter !== "all" ? statusFilter : undefined,
+          }),
+          fetchCustomerStats(),
+          fetchClosureAnalysis(),
+        ]);
+        setCustomers(list);
+        setStats(customerStats);
+        setClosureReasons(closure);
+      } catch (error) {
+        console.error("Failed to load customers", error);
+        setCustomers([]);
+      }
+    }
+    load();
+  }, [search, statusFilter]);
 
   const filteredCustomers = useMemo(() => {
     let result = customers;
 
     if (statusFilter !== "all") {
       result = result.filter((c) => c.status === statusFilter);
+    }
+
+    if (branchFilter !== "all") {
+      result = result.filter((c) =>
+        c.branches?.some((b) => b.name === branchFilter)
+      );
     }
 
     if (search.trim()) {
@@ -56,9 +98,8 @@ export default function CustomersManagement() {
     }
 
     return result;
-  }, [customers, search, statusFilter]);
+  }, [customers, search, statusFilter, branchFilter]);
 
-  const stats = useMemo(() => getCustomerStats(customers), [customers]);
   const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const startIndex = (safePage - 1) * PAGE_SIZE;
@@ -110,8 +151,11 @@ export default function CustomersManagement() {
             className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
           >
             <option value="all">Select Branch</option>
-            <option value="Bracnh1">Bracnh1</option>
-            <option value="Jaffna Branch1">Jaffna Branch1</option>
+            {branchOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
           </select>
           <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
         </div>
@@ -319,7 +363,7 @@ export default function CustomersManagement() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {CLOSURE_REASONS.map((item) => (
+            {closureReasons.map((item) => (
               <div
                 key={item.id}
                 className="flex items-center gap-3 rounded-xl bg-white px-4 py-4"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
   ChevronDown,
@@ -21,11 +21,12 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
 import {
-  filterOrdersByPeriod,
-  getOrderStats,
-  INITIAL_ORDERS,
-} from "@/services/orderService";
-import type { Order, OrderPeriod, OrderStatus } from "@/types";
+  advanceOrderStatus,
+  deleteOrder,
+  fetchOrderStats,
+  fetchOrders,
+} from "@/services/remoteApi";
+import type { Order, OrderPeriod, OrderStats, OrderStatus } from "@/types";
 
 const PAGE_SIZE = 10;
 
@@ -51,7 +52,19 @@ export default function OrdersManagement({
   role = "superadmin",
 }: OrdersManagementProps) {
   const isSuperadmin = role === "superadmin";
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [stats, setStats] = useState<OrderStats>({
+    totalOrders: 0,
+    pendingOrders: 0,
+    inProgressOrders: 0,
+    completedOrders: 0,
+    totalCustomers: 0,
+    productSold: "0",
+    todaysRevenue: "0,00 €",
+    weeklyRevenue: "0,00 €",
+    monthlyRevenue: "0,00 €",
+    totalRevenue: "0,00 €",
+  });
   const [period, setPeriod] = useState<OrderPeriod>("now");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -62,32 +75,29 @@ export default function OrdersManagement({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const filteredOrders = useMemo(() => {
-    let result = filterOrdersByPeriod(orders, period);
+  const filteredOrders = orders;
 
-    if (branchFilter !== "all") {
-      result = result.filter((o) => o.branch === branchFilter);
+  useEffect(() => {
+    async function load() {
+      try {
+        const [orderList, orderStats] = await Promise.all([
+          fetchOrders({
+            period,
+            status:
+              statusFilter !== "all" ? (statusFilter as OrderStatus) : undefined,
+            branch: branchFilter !== "all" ? branchFilter : undefined,
+            search: search.trim() || undefined,
+          }),
+          fetchOrderStats(period),
+        ]);
+        setOrders(orderList);
+        setStats(orderStats);
+      } catch (error) {
+        console.error("Failed to load orders", error);
+      }
     }
-
-    if (statusFilter !== "all") {
-      result = result.filter((o) => o.status === statusFilter);
-    }
-
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (o) =>
-          o.id.toLowerCase().includes(q) ||
-          o.customerName.toLowerCase().includes(q) ||
-          o.email.toLowerCase().includes(q) ||
-          o.branch.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [orders, period, search, statusFilter, branchFilter]);
-
-  const stats = useMemo(() => getOrderStats(filteredOrders), [filteredOrders]);
+    load();
+  }, [period, statusFilter, branchFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -99,29 +109,29 @@ export default function OrdersManagement({
     setCurrentPage(1);
   };
 
-  const handleDelete = (orderId: string) => {
-    setOrders((prev) => prev.filter((o) => o.id !== orderId));
-    setViewOrder(null);
-    setDetailsOpen(false);
-    setDeleteOpen(false);
-    setDeleteOrderId(null);
+  const handleDelete = async (orderId: string) => {
+    try {
+      await deleteOrder(orderId);
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setViewOrder(null);
+      setDetailsOpen(false);
+      setDeleteOpen(false);
+      setDeleteOrderId(null);
+    } catch (error) {
+      console.error("Failed to delete order", error);
+    }
   };
 
-  const handleAdvanceStatus = (orderId: string) => {
-    setOrders((prev) =>
-      prev.map((o) => {
-        if (o.id !== orderId) return o;
-        const next = NEXT_STATUS[o.status];
-        if (!next) return o;
-        return { ...o, status: next };
-      })
-    );
-    setViewOrder((prev) => {
-      if (!prev || prev.id !== orderId) return prev;
-      const next = NEXT_STATUS[prev.status];
-      if (!next) return prev;
-      return { ...prev, status: next };
-    });
+  const handleAdvanceStatus = async (orderId: string) => {
+    try {
+      const updated = await advanceOrderStatus(orderId);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? updated : o))
+      );
+      setViewOrder((prev) => (prev?.id === orderId ? updated : prev));
+    } catch (error) {
+      console.error("Failed to advance order status", error);
+    }
   };
 
   const openDelete = (orderId: string) => {
@@ -289,6 +299,7 @@ export default function OrdersManagement({
               className="h-11 min-w-[140px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
             >
               <option value="all">Status</option>
+              <option value="Pending">Pending</option>
               <option value="In-Progress">In-Progress</option>
               <option value="Ready">Ready</option>
               <option value="Completed">Completed</option>

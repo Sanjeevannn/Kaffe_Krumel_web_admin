@@ -8,12 +8,15 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { authenticateUser } from "@/services/authService";
+import {
+  fetchCurrentUser,
+  loginWithApi,
+  logoutFromApi,
+} from "@/services/authService";
+import { getStoredUser, clearAuthStorage } from "@/lib/tokenStorage";
 import type { AuthContextValue, AuthUser } from "@/types";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-const STORAGE_KEY = "kaffe_krumel_auth";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -21,37 +24,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
+    async function restoreSession() {
+      const stored = getStoredUser();
+      if (!stored) {
+        setLoading(false);
+        return;
+      }
       try {
-        setUser(JSON.parse(stored) as AuthUser);
+        const profile = await fetchCurrentUser();
+        setUser({
+          email: profile.email,
+          role: profile.role,
+          name: profile.name,
+          branch: profile.branch,
+          branchId: profile.branchId,
+          staffRole: profile.staffRole,
+        });
       } catch {
-        localStorage.removeItem(STORAGE_KEY);
+        clearAuthStorage();
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
     }
-    setLoading(false);
+    restoreSession();
   }, []);
 
-  const login = (email: string, password: string) => {
-    const authenticatedUser = authenticateUser(email, password);
-    if (!authenticatedUser) {
-      return { success: false, message: "Invalid email or password" };
+  const login = async (email: string, password: string) => {
+    try {
+      const { user: authenticatedUser, redirectTo } = await loginWithApi(
+        email,
+        password
+      );
+      setUser(authenticatedUser);
+      router.push(redirectTo);
+      return { success: true };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Invalid email or password";
+      return { success: false, message };
     }
-
-    const session: AuthUser = {
-      email: authenticatedUser.email,
-      role: authenticatedUser.role,
-      name: authenticatedUser.name,
-    };
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-    setUser(session);
-    router.push(authenticatedUser.redirectTo);
-    return { success: true };
   };
 
-  const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
+  const logout = async () => {
+    await logoutFromApi();
     setUser(null);
     router.push("/auth/login");
   };

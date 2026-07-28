@@ -23,10 +23,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  INITIAL_DRINK_PRODUCTS,
-  INITIAL_FOOD_PRODUCTS,
-  INITIAL_SUB_CATEGORIES,
-} from "@/services/productService";
+  createProduct,
+  createSubCategory,
+  deleteProduct,
+  fetchProducts,
+  fetchSubCategories,
+  updateProduct,
+  updateProductStatus,
+  updateSubCategory,
+} from "@/services/remoteApi";
 import type {
   ProductFormData,
   ProductRecord,
@@ -49,11 +54,11 @@ export default function ProductManagement({
   // Admin cards have no action buttons, so 3 rows (15 cards) fit per page
   const pageSize = isSuperadmin ? PAGE_SIZE : 15;
   const [foodProducts, setFoodProducts] =
-    useState<ProductRecord[]>(INITIAL_FOOD_PRODUCTS);
+    useState<ProductRecord[]>([]);
   const [drinkProducts, setDrinkProducts] =
-    useState<ProductRecord[]>(INITIAL_DRINK_PRODUCTS);
+    useState<ProductRecord[]>([]);
   const [subCategories, setSubCategories] = useState<SubCategoryRecord[]>(
-    INITIAL_SUB_CATEGORIES
+    []
   );
   const [tab, setTab] = useState<ProductTab>("food");
   const [search, setSearch] = useState("");
@@ -84,6 +89,30 @@ export default function ProductManagement({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const subCategoryMenuRef = useRef<HTMLDivElement>(null);
+  const [saveError, setSaveError] = useState("");
+
+  const loadData = async () => {
+    try {
+      const [food, drinks, subs] = await Promise.all([
+        fetchProducts("food"),
+        fetchProducts("drinks"),
+        fetchSubCategories(),
+      ]);
+      setFoodProducts(food);
+      setDrinkProducts(drinks);
+      setSubCategories(subs);
+      setSaveError("");
+    } catch (error) {
+      console.error("Failed to load products", error);
+      setFoodProducts([]);
+      setDrinkProducts([]);
+      setSaveError("Unable to load products from server.");
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const source = tab === "food" ? foodProducts : drinkProducts;
 
@@ -188,56 +217,34 @@ export default function ProductManagement({
     setSaveConfirmOpen(true);
   };
 
-  const handleConfirmSave = () => {
-    if (!pendingForm) return;
-    const productType = editingProduct?.type ?? tab;
-    const priceValue =
-      productType === "drinks"
-        ? pendingForm.sizes?.[0]?.price || pendingForm.price || "0"
-        : pendingForm.price;
-    const price = priceValue.startsWith("€")
-      ? priceValue
-      : `€${priceValue}`;
-
-    if (formMode === "create") {
-      const newProduct: ProductRecord = {
-        id: Date.now(),
-        type: productType,
-        name: pendingForm.name,
-        subCategory: pendingForm.subCategory,
-        price,
-        description: pendingForm.description || "Drink product",
-        image: pendingForm.image,
-        status: "Active",
-        sizes: productType === "drinks" ? pendingForm.sizes : undefined,
-      };
-      if (productType === "food") {
-        setFoodProducts((prev) => [newProduct, ...prev]);
-      } else {
-        setDrinkProducts((prev) => [newProduct, ...prev]);
-      }
-      setCurrentPage(1);
-    } else if (editingProduct) {
-      const updatedProduct: ProductRecord = {
-        ...editingProduct,
-        name: pendingForm.name,
-        subCategory: pendingForm.subCategory,
-        price,
-        description: pendingForm.description || editingProduct.description,
-        image: pendingForm.image,
-        sizes: productType === "drinks" ? pendingForm.sizes : editingProduct.sizes,
-      };
-      const updateProduct = (prev: ProductRecord[]) =>
-        prev.map((p) => (p.id === editingProduct.id ? updatedProduct : p));
-      if (productType === "food") setFoodProducts(updateProduct);
-      else setDrinkProducts(updateProduct);
-      setViewProduct(updatedProduct);
-      if (productType === "drinks") setViewOpen(true);
+  const handleConfirmSave = async () => {
+    if (!pendingForm) {
+      setSaveError("Nothing to save. Please fill the product form again.");
+      return;
     }
+    const productType = editingProduct?.type ?? tab;
+    setSaveError("");
 
-    setPendingForm(null);
-    setFormOpen(false);
-    setEditingProduct(null);
+    try {
+      if (formMode === "create") {
+        await createProduct(productType, pendingForm);
+      } else if (editingProduct) {
+        await updateProduct(editingProduct.id, productType, pendingForm);
+      }
+
+      await loadData();
+      setPendingForm(null);
+      setFormOpen(false);
+      setEditingProduct(null);
+      setSaveConfirmOpen(false);
+      setCurrentPage(1);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save product";
+      console.error("Failed to save product", error);
+      setSaveError(message);
+      setSaveConfirmOpen(false);
+    }
   };
 
   const openDelete = (id: number) => {
@@ -245,19 +252,30 @@ export default function ProductManagement({
     setDeleteOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteId == null) return;
-    setFoodProducts((prev) => prev.filter((p) => p.id !== deleteId));
-    setDrinkProducts((prev) => prev.filter((p) => p.id !== deleteId));
-    setDeleteId(null);
-    setViewOpen(false);
-    setViewProduct(null);
+    try {
+      await deleteProduct(deleteId);
+      setFoodProducts((prev) => prev.filter((p) => p.id !== deleteId));
+      setDrinkProducts((prev) => prev.filter((p) => p.id !== deleteId));
+      setDeleteId(null);
+      setViewOpen(false);
+      setViewProduct(null);
+      setDeleteOpen(false);
+    } catch (error) {
+      console.error("Failed to delete product", error);
+    }
   };
 
-  const handleToggleStatus = (productId: number, status: ProductStatus) => {
-    updateProductList((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, status } : p))
-    );
+  const handleToggleStatus = async (productId: number, status: ProductStatus) => {
+    try {
+      const updated = await updateProductStatus(productId, status);
+      updateProductList((prev) =>
+        prev.map((p) => (p.id === productId ? updated : p))
+      );
+    } catch (error) {
+      console.error("Failed to update status", error);
+    }
   };
 
   const handleSubCatSaveRequest = (data: SubCategoryFormData) => {
@@ -265,46 +283,38 @@ export default function ProductManagement({
     setSubCatConfirmOpen(true);
   };
 
-  const handleConfirmSubCatSave = () => {
+  const handleConfirmSubCatSave = async () => {
     if (!pendingSubCat || !pendingSubCat.category) return;
     const name = pendingSubCat.name.trim();
-    const exists = subCategories.some(
-      (s) =>
-        s.id !== editingSubCat?.id &&
-        s.category === pendingSubCat.category &&
-        s.name.toLowerCase() === name.toLowerCase()
-    );
-    if (!exists && subCatMode === "create") {
-      setSubCategories((prev) => [
-        {
-          id: Date.now(),
+
+    try {
+      if (subCatMode === "create") {
+        const created = await createSubCategory({
+          ...pendingSubCat,
           name,
-          category: pendingSubCat.category as "Food" | "Drinks",
-          image: pendingSubCat.image,
-        },
-        ...prev,
-      ]);
-    } else if (!exists && editingSubCat) {
-      setSubCategories((prev) =>
-        prev.map((item) =>
-          item.id === editingSubCat.id
-            ? {
-                ...item,
-                name,
-                category: pendingSubCat.category as "Food" | "Drinks",
-                image: pendingSubCat.image,
-              }
-            : item
-        )
-      );
-      if (subCategoryFilter === editingSubCat.name) {
-        setSubCategoryFilter(name);
+        });
+        setSubCategories((prev) => [created, ...prev]);
+      } else if (editingSubCat) {
+        const updated = await updateSubCategory(editingSubCat.id, {
+          ...pendingSubCat,
+          name,
+        });
+        setSubCategories((prev) =>
+          prev.map((item) => (item.id === editingSubCat.id ? updated : item))
+        );
+        if (subCategoryFilter === editingSubCat.name) {
+          setSubCategoryFilter(name);
+        }
       }
+      setPendingSubCat(null);
+      setSubCatOpen(false);
+      setEditingSubCat(null);
+      setSubCatMode("create");
+      setSubCatConfirmOpen(false);
+    } catch (error) {
+      console.error("Failed to save sub-category", error);
+      setSubCatConfirmOpen(false);
     }
-    setPendingSubCat(null);
-    setSubCatOpen(false);
-    setEditingSubCat(null);
-    setSubCatMode("create");
   };
 
   const openCreateSubCategory = () => {
@@ -323,6 +333,12 @@ export default function ProductManagement({
   return (
     <>
       <DashboardHeader title="Product management" />
+
+      {saveError ? (
+        <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600">
+          {saveError}
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl bg-[#F2F2F3] p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">

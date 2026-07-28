@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EMPTY_SUB_CATEGORY_FORM } from "@/services/productService";
+import { ApiError, uploadImageFile } from "@/lib/api";
 import type { SubCategoryFormData } from "@/types";
 
 interface SubCategoryFormModalProps {
@@ -33,6 +34,7 @@ export default function SubCategoryFormModal({
 }: SubCategoryFormModalProps) {
   const [form, setForm] = useState<SubCategoryFormData>(EMPTY_SUB_CATEGORY_FORM);
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -52,7 +54,7 @@ export default function SubCategoryFormModal({
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleFile = (file: File | undefined) => {
+  const handleFile = async (file: File | undefined) => {
     if (!file) return;
     if (!["image/png", "image/jpeg", "image/jpg"].includes(file.type)) {
       setError("Only PNG/JPG formats are allowed.");
@@ -62,13 +64,33 @@ export default function SubCategoryFormModal({
       setError("Image must be up to 10mb.");
       return;
     }
+    setUploading(true);
     setError("");
-    updateField("image", URL.createObjectURL(file));
+    try {
+      const url = await uploadImageFile(file);
+      updateField("image", url);
+    } catch (err) {
+      const message =
+        err instanceof ApiError || err instanceof Error
+          ? err.message
+          : "Image upload failed";
+      setError(message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleSave = () => {
+    if (uploading) {
+      setError("Please wait for image upload to finish.");
+      return;
+    }
     if (!form.image) {
       setError("Please add a subcategory image.");
+      return;
+    }
+    if (form.image.startsWith("blob:")) {
+      setError("Image upload incomplete. Please select the image again.");
       return;
     }
     if (!form.category || !form.name.trim()) {
@@ -100,7 +122,7 @@ export default function SubCategoryFormModal({
             </button>
           </DialogHeader>
 
-          <Field label="Image Image">
+          <Field label="Image">
             {form.image ? (
               <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-[#F2F2F3]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}

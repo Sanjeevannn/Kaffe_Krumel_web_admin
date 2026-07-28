@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -20,11 +20,16 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
 import {
-  getUserStats,
-  INITIAL_USERS,
-  USER_BRANCHES,
-} from "@/services/userService";
+  createStaffUser,
+  deleteStaffUser,
+  fetchBranches,
+  fetchStaffStats,
+  fetchStaffUsers,
+  updateStaffStatus,
+  updateStaffUser,
+} from "@/services/remoteApi";
 import type {
+  BranchRecord,
   StaffRole,
   StaffStatus,
   StaffUser,
@@ -34,7 +39,14 @@ import type {
 const PAGE_SIZE = 10;
 
 export default function UsersManagement() {
-  const [users, setUsers] = useState<StaffUser[]>(INITIAL_USERS);
+  const [users, setUsers] = useState<StaffUser[]>([]);
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
+  const [stats, setStats] = useState({
+    totalBranch: 0,
+    totalUsers: 0,
+    admin: 0,
+    cashier: 0,
+  });
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
@@ -66,7 +78,7 @@ export default function UsersManagement() {
       const q = search.toLowerCase();
       result = result.filter(
         (u) =>
-          u.username.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q) ||
           u.manager.toLowerCase().includes(q) ||
           u.branch.toLowerCase().includes(q) ||
           u.role.toLowerCase().includes(q)
@@ -75,7 +87,26 @@ export default function UsersManagement() {
     return result;
   }, [users, search, branchFilter, roleFilter, statusFilter]);
 
-  const stats = useMemo(() => getUserStats(users), [users]);
+  useEffect(() => {
+    async function load() {
+      try {
+        const [staff, staffStats, branches] = await Promise.all([
+          fetchStaffUsers(),
+          fetchStaffStats(),
+          fetchBranches(),
+        ]);
+        setUsers(staff);
+        setStats(staffStats);
+        setBranches(branches);
+      } catch (error) {
+        console.error("Failed to load users", error);
+        setUsers([]);
+        setBranches([]);
+      }
+    }
+    load();
+  }, []);
+
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const startIndex = (safePage - 1) * PAGE_SIZE;
@@ -100,42 +131,31 @@ export default function UsersManagement() {
     setSaveConfirmOpen(true);
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     if (!pendingForm || !pendingForm.role) return;
 
-    if (formMode === "create") {
-      const newUser: StaffUser = {
-        id: Date.now(),
-        branch: pendingForm.branch,
-        username: pendingForm.username,
-        manager: pendingForm.manager,
-        createdAt: new Date().toLocaleDateString("en-GB"),
-        role: pendingForm.role as StaffRole,
-        status: "Active",
-        password: pendingForm.password,
-      };
-      setUsers((prev) => [newUser, ...prev]);
-      setCurrentPage(1);
-    } else if (editingUser) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingUser.id
-            ? {
-                ...u,
-                branch: pendingForm.branch,
-                username: pendingForm.username,
-                manager: pendingForm.manager,
-                role: pendingForm.role as StaffRole,
-                password: pendingForm.password,
-              }
-            : u
-        )
-      );
-    }
+    try {
+      if (formMode === "create") {
+        const created = await createStaffUser(pendingForm);
+        setUsers((prev) => [created, ...prev]);
+        setCurrentPage(1);
+      } else if (editingUser) {
+        const updated = await updateStaffUser(editingUser.id, pendingForm);
+        setUsers((prev) =>
+          prev.map((u) => (u.id === editingUser.id ? updated : u))
+        );
+      }
+      const staffStats = await fetchStaffStats();
+      setStats(staffStats);
 
-    setPendingForm(null);
-    setFormOpen(false);
-    setEditingUser(null);
+      setPendingForm(null);
+      setFormOpen(false);
+      setEditingUser(null);
+      setSaveConfirmOpen(false);
+    } catch (error) {
+      console.error("Failed to save user", error);
+      setSaveConfirmOpen(false);
+    }
   };
 
   const openDelete = (id: number) => {
@@ -143,16 +163,27 @@ export default function UsersManagement() {
     setDeleteOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteUserId == null) return;
-    setUsers((prev) => prev.filter((u) => u.id !== deleteUserId));
-    setDeleteUserId(null);
+    try {
+      await deleteStaffUser(deleteUserId);
+      setUsers((prev) => prev.filter((u) => u.id !== deleteUserId));
+      const staffStats = await fetchStaffStats();
+      setStats(staffStats);
+      setDeleteUserId(null);
+      setDeleteOpen(false);
+    } catch (error) {
+      console.error("Failed to delete user", error);
+    }
   };
 
-  const updateStatus = (id: number, status: StaffStatus) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === id ? { ...u, status } : u))
-    );
+  const updateStatus = async (id: number, status: StaffStatus) => {
+    try {
+      const updated = await updateStaffStatus(id, status);
+      setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
+    } catch (error) {
+      console.error("Failed to update user status", error);
+    }
   };
 
   const resetPage = () => setCurrentPage(1);
@@ -196,9 +227,9 @@ export default function UsersManagement() {
             className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
           >
             <option value="all">Select Branch</option>
-            {USER_BRANCHES.map((b) => (
-              <option key={b} value={b}>
-                {b}
+            {branches.map((b) => (
+              <option key={b.id} value={b.name}>
+                {b.name}
               </option>
             ))}
           </select>
@@ -274,7 +305,7 @@ export default function UsersManagement() {
               <thead>
                 <tr className="border-b-2 border-[#F2F2F3] text-gray-500">
                   <th className="px-4 py-3 font-medium">Branch</th>
-                  <th className="px-4 py-3 font-medium">Username</th>
+                  <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Manager</th>
                   <th className="px-4 py-3 font-medium">Created at</th>
                   <th className="px-4 py-3 font-medium">Role</th>
@@ -295,7 +326,7 @@ export default function UsersManagement() {
                 ) : (
                   pageUsers.map((user) => (
                     <tr
-                      key={user.id}
+                      key={user.id != null ? `user-${user.id}` : user.email}
                       className="border-b-2 border-[#F2F2F3] bg-white hover:bg-gray-50/60"
                     >
                       <td className="px-4 py-3">
@@ -306,7 +337,7 @@ export default function UsersManagement() {
                           <span className="text-gray-900">{user.branch}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-900">{user.username}</td>
+                      <td className="px-4 py-3 text-gray-900">{user.email}</td>
                       <td className="px-4 py-3 text-gray-700">{user.manager}</td>
                       <td className="px-4 py-3 text-gray-700">{user.createdAt}</td>
                       <td className="px-4 py-3">
@@ -349,12 +380,12 @@ export default function UsersManagement() {
                           <ActionIcon
                             type="edit"
                             onClick={() => openEdit(user)}
-                            label={`Edit ${user.username}`}
+                            label={`Edit ${user.email}`}
                           />
                           <ActionIcon
                             type="delete"
                             onClick={() => openDelete(user.id)}
-                            label={`Delete ${user.username}`}
+                            label={`Delete ${user.email}`}
                           />
                         </div>
                       </td>
@@ -418,6 +449,7 @@ export default function UsersManagement() {
         open={formOpen}
         mode={formMode}
         user={editingUser}
+        branches={branches}
         onOpenChange={setFormOpen}
         onSubmit={handleFormSubmit}
       />
