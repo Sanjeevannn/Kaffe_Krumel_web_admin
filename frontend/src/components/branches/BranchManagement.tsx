@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Eye,
   Filter,
   Search,
@@ -16,6 +17,7 @@ import ConfirmSaveBranchDialog from "@/components/dialogs/ConfirmSaveBranchDialo
 import DeleteBranchDialog from "@/components/dialogs/DeleteBranchDialog";
 import BranchDetailsModal from "@/components/models/BranchDetailsModal";
 import BranchFormModal from "@/components/models/BranchFormModal";
+import StripeKeysModal from "@/components/models/StripeKeysModal";
 import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +57,9 @@ export default function BranchManagement() {
 
   const [viewOpen, setViewOpen] = useState(false);
   const [viewBranch, setViewBranch] = useState<BranchRecord | null>(null);
+
+  const [stripeOpen, setStripeOpen] = useState(false);
+  const [stripeBranch, setStripeBranch] = useState<BranchRecord | null>(null);
 
   const filtered = useMemo(() => {
     let result = branches;
@@ -312,6 +317,18 @@ export default function BranchManagement() {
                           >
                             <Eye className="size-4" />
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStripeBranch(branch);
+                              setStripeOpen(true);
+                            }}
+                            className="rounded-lg p-1.5 text-[#00562C] hover:bg-[#e8f5ee]"
+                            aria-label={`Stripe keys for ${branch.name}`}
+                            title="Stripe keys"
+                          >
+                            <CreditCard className="size-4" />
+                          </button>
                           <ActionIcon
                             type="edit"
                             onClick={() => openEdit(branch)}
@@ -413,6 +430,15 @@ export default function BranchManagement() {
         onEdit={openEdit}
         onDelete={openDelete}
         onToggleStatus={handleToggleStatus}
+      />
+
+      <StripeKeysModal
+        open={stripeOpen}
+        branch={stripeBranch}
+        onOpenChange={(open) => {
+          setStripeOpen(open);
+          if (!open) setStripeBranch(null);
+        }}
       />
     </>
   );

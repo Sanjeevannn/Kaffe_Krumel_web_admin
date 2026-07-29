@@ -325,3 +325,20 @@ export async function fetchCustomerStats() {
 export async function fetchClosureAnalysis() {
   return api.get<ClosureReasonStat[]>("/api/customers/closure-analysis");
 }
+
+// --- Stripe keys (per branch) ---
+export async function fetchStripePublicKey(branchId: number) {
+  return api.get<{ stripePublicKey: string }>(`/api/stripe-keys/${branchId}`);
+}
+
+export async function saveStripeKeys(payload: {
+  branchId: number;
+  stripePublicKey: string;
+  stripeSecretKey?: string;
+}) {
+  return api.post<{
+    id: string;
+    branchId: number;
+    stripePublicKey: string;
+  }>("/api/stripe-keys", payload);
+}
