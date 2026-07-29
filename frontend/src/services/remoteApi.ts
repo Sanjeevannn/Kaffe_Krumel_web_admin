@@ -302,24 +302,77 @@ export async function updateStaffStatus(id: number, status: StaffStatus) {
   return api.patch<StaffUser>(`/api/users/${id}/status`, { status });
 }
 
-// --- Customers ---
-export async function fetchCustomers(params?: {
-  search?: string;
-  status?: string;
-}) {
-  const searchParams = new URLSearchParams();
-  if (params?.search) searchParams.set("search", params.search);
-  if (params?.status) searchParams.set("status", params.status);
-  const q = searchParams.toString();
-  return api.get<Customer[]>(`/api/customers${q ? `?${q}` : ""}`);
+// --- Customers (mobile accounts) ---
+type CustomerAccountApi = {
+  _id: string;
+  name?: string;
+  email?: string;
+  phone?: string | null;
+  authProvider?: string;
+  createdAt?: string;
+};
+
+function formatCustomerDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
 }
 
-export async function fetchCustomerStats() {
-  return api.get<{
-    totalCustomers: number;
-    totalNewCustomers: number;
-    accountDeleted: number;
-  }>("/api/customers/stats");
+function initialsFrom(name?: string, email?: string) {
+  const source = String(name || email || "").trim();
+  if (!source) return "";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
+function mapCustomerAccount(account: CustomerAccountApi): Customer {
+  return {
+    id: account._id,
+    name: account.name || "",
+    initials: initialsFrom(account.name, account.email),
+    email: account.email || "",
+    phone: account.phone || "Not yet added",
+    orders: 0,
+    spend: "0,00 €",
+    status: "Active",
+    gender: "Not yet added",
+    dateOfBirth: "Not yet added",
+    accountCreated: formatCustomerDate(account.createdAt),
+    branches: [],
+  };
+}
+
+export async function fetchCustomers() {
+  const accounts = await api.get<CustomerAccountApi[]>("/api/customers/accounts");
+  return accounts.map(mapCustomerAccount);
+}
+
+export async function fetchCustomerStatsFromList(customers: Customer[]) {
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const totalNewCustomers = customers.filter((c) => {
+    if (!c.accountCreated) return false;
+    const [d, m, y] = c.accountCreated.split("/").map(Number);
+    const created = new Date(y, m - 1, d).getTime();
+    return Number.isFinite(created) && created >= thirtyDaysAgo;
+  }).length;
+
+  let accountDeleted = 0;
+  try {
+    const stats = await api.get<{ accountDeleted?: number }>(
+      "/api/customers/stats"
+    );
+    accountDeleted = stats.accountDeleted ?? 0;
+  } catch {
+    accountDeleted = 0;
+  }
+
+  return {
+    totalCustomers: customers.length,
+    totalNewCustomers,
+    accountDeleted,
+  };
 }
 
 export async function fetchClosureAnalysis() {
@@ -335,6 +388,7 @@ export async function saveStripeKeys(payload: {
   branchId: number;
   stripePublicKey: string;
   stripeSecretKey?: string;
+  webhookSecret?: string;
 }) {
   return api.post<{
     id: string;

@@ -152,7 +152,7 @@ export interface CustomerBranchInfo {
 }
 
 export interface Customer {
-  id: number;
+  id: string;
   name: string;
   initials: string;
   email: string;

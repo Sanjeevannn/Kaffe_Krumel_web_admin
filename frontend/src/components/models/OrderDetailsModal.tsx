@@ -66,7 +66,7 @@ export default function OrderDetailsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-2xl overflow-hidden rounded-2xl border-none p-0 shadow-xl"
+        className="max-w-3xl overflow-hidden rounded-2xl border-none p-0 shadow-xl"
       >
         <div className="grid max-h-[90vh] gap-4 overflow-y-auto p-4 sm:p-6 [scrollbar-gutter:stable]">
         <DialogHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
@@ -209,7 +209,7 @@ export default function OrderDetailsModal({
           <h3 className="mb-3 text-base font-bold text-gray-900">
             Order Information
           </h3>
-          <div className="grid grid-cols-2 gap-4 rounded-xl bg-[#F2F2F3] p-4 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 rounded-xl bg-[#F2F2F3] p-4 sm:grid-cols-2 lg:grid-cols-4">
             <InfoItem
               icon={<Clock className="size-4 text-[#00562C]" />}
               label="Order time"
@@ -298,12 +298,17 @@ function InfoItem({
   value: string;
 }) {
   return (
-    <div className="space-y-1">
+    <div className="min-w-0 space-y-1">
       <div className="flex items-center gap-1.5 text-xs text-gray-500">
         {icon}
         {label}
       </div>
-      <p className="text-sm font-semibold text-gray-900">{value}</p>
+      <p
+        className="break-all text-sm font-semibold text-gray-900"
+        title={value}
+      >
+        {value || "—"}
+      </p>
     </div>
   );
 }

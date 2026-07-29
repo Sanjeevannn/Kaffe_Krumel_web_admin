@@ -23,7 +23,7 @@ import {
   fetchBranches,
   fetchClosureAnalysis,
   fetchCustomers,
-  fetchCustomerStats,
+  fetchCustomerStatsFromList,
 } from "@/services/remoteApi";
 import type { ClosureReasonStat, Customer, CustomerTab } from "@/types";
 
@@ -55,14 +55,11 @@ export default function CustomersManagement() {
   useEffect(() => {
     async function load() {
       try {
-        const [list, customerStats, closure] = await Promise.all([
-          fetchCustomers({
-            search: search.trim() || undefined,
-            status: statusFilter !== "all" ? statusFilter : undefined,
-          }),
-          fetchCustomerStats(),
+        const [list, closure] = await Promise.all([
+          fetchCustomers(),
           fetchClosureAnalysis(),
         ]);
+        const customerStats = await fetchCustomerStatsFromList(list);
         setCustomers(list);
         setStats(customerStats);
         setClosureReasons(closure);
@@ -72,7 +69,7 @@ export default function CustomersManagement() {
       }
     }
     load();
-  }, [search, statusFilter]);
+  }, []);
 
   const filteredCustomers = useMemo(() => {
     let result = customers;

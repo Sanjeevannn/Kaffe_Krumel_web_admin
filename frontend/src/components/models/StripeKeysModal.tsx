@@ -33,8 +33,10 @@ export default function StripeKeysModal({
 }: StripeKeysModalProps) {
   const [publicKey, setPublicKey] = useState("");
   const [secretKey, setSecretKey] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
   const [hasExisting, setHasExisting] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [showWebhook, setShowWebhook] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -45,7 +47,9 @@ export default function StripeKeysModal({
     let cancelled = false;
     setError("");
     setSecretKey("");
+    setWebhookSecret("");
     setShowSecret(false);
+    setShowWebhook(false);
     setLoading(true);
 
     fetchStripePublicKey(branch.id)
@@ -73,6 +77,7 @@ export default function StripeKeysModal({
 
     const pub = publicKey.trim();
     const sec = secretKey.trim();
+    const wh = webhookSecret.trim();
 
     if (!pub) {
       setError("Stripe public key is required.");
@@ -82,8 +87,9 @@ export default function StripeKeysModal({
       setError("Stripe private key is required.");
       return;
     }
-    if (hasExisting && !sec) {
-      // Updating public only is allowed by backend when secret omitted
+    if (!hasExisting && !wh) {
+      setError("Stripe webhook secret is required.");
+      return;
     }
 
     setSaving(true);
@@ -93,6 +99,7 @@ export default function StripeKeysModal({
         branchId: branch.id,
         stripePublicKey: pub,
         ...(sec ? { stripeSecretKey: sec } : {}),
+        ...(wh ? { webhookSecret: wh } : {}),
       });
       onSaved?.();
       onOpenChange(false);
@@ -120,7 +127,7 @@ export default function StripeKeysModal({
                 Stripe Keys
               </DialogTitle>
               <p className="mt-1 text-sm text-gray-600">
-                {branch?.name ?? "Branch"} — public & private payment keys
+                {branch?.name ?? "Branch"} — public, private & webhook keys
               </p>
             </div>
             <button
@@ -180,10 +187,44 @@ export default function StripeKeysModal({
                     )}
                   </button>
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-900">
+                  Webhook Secret Key
+                </Label>
+                <div className="relative">
+                  <Input
+                    type={showWebhook ? "text" : "password"}
+                    value={webhookSecret}
+                    onChange={(e) => setWebhookSecret(e.target.value)}
+                    placeholder={
+                      hasExisting
+                        ? "Leave blank to keep current webhook secret"
+                        : "whsec_…"
+                    }
+                    className="h-11 rounded-xl border-none bg-[#F2F2F3] pr-10 font-mono text-sm"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowWebhook((v) => !v)}
+                    className="absolute top-1/2 right-3 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={
+                      showWebhook ? "Hide webhook secret" : "Show webhook secret"
+                    }
+                  >
+                    {showWebhook ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
+                  </button>
+                </div>
                 {hasExisting ? (
                   <p className="text-[11px] text-gray-500">
-                    Private key is never shown again. Enter a new one only to
-                    replace it.
+                    Private & webhook secrets are never shown again. Enter new
+                    values only to replace them.
                   </p>
                 ) : null}
               </div>
