@@ -22,7 +22,7 @@ import {
   fetchOffers,
   updateOfferStatus,
 } from "@/services/remoteApi";
-import type { OfferRecord, OfferStatus, OfferTab } from "@/types";
+import type { BranchRecord, OfferRecord, OfferStatus, OfferTab } from "@/types";
 
 const PAGE_SIZE = 10;
 
@@ -33,7 +33,7 @@ export default function OfferManagement() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
-  const [branchOptions, setBranchOptions] = useState<string[]>([]);
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [viewOffer, setViewOffer] = useState<OfferRecord | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -56,14 +56,19 @@ export default function OfferManagement() {
   useEffect(() => {
     loadOffers();
     fetchBranches()
-      .then((branches) => setBranchOptions(branches.map((b) => b.name)))
-      .catch(() => setBranchOptions([]));
+      .then(setBranches)
+      .catch(() => setBranches([]));
   }, []);
 
   const source = tab === "single" ? singleOffers : comboOffers;
 
   const filtered = useMemo(() => {
     let result = source;
+
+    if (branchFilter !== "all") {
+      const branchId = Number(branchFilter);
+      result = result.filter((o) => o.branchId === branchId);
+    }
 
     if (tab === "single" && categoryFilter !== "all") {
       result = result.filter((o) => o.category === categoryFilter);
@@ -80,7 +85,7 @@ export default function OfferManagement() {
     }
 
     return result;
-  }, [source, tab, search, categoryFilter]);
+  }, [source, tab, search, categoryFilter, branchFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -146,13 +151,16 @@ export default function OfferManagement() {
           <Filter className="pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2 text-[#00562C]" />
           <select
             value={branchFilter}
-            onChange={(e) => setBranchFilter(e.target.value)}
+            onChange={(e) => {
+              setBranchFilter(e.target.value);
+              resetPage();
+            }}
             className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
           >
-            <option value="all">Select Branch</option>
-            {branchOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            <option value="all">All Branches</option>
+            {branches.map((branch) => (
+              <option key={branch.id} value={String(branch.id)}>
+                {branch.name}
               </option>
             ))}
           </select>

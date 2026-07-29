@@ -8,6 +8,7 @@ import {
   Filter,
   Plus,
   Search,
+  X,
 } from "lucide-react";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import ConfirmSaveOfferDialog from "@/components/dialogs/ConfirmSaveOfferDialog";
@@ -20,7 +21,7 @@ import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { OFFER_CATEGORIES } from "@/services/offerService";
+import { OFFER_CATEGORIES, isOfferValidityExpired } from "@/services/offerService";
 import {
   createComboOffer,
   createSingleOffer,
@@ -51,6 +52,7 @@ export default function AdminOfferManagement() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [expiredOfferNames, setExpiredOfferNames] = useState<string[]>([]);
 
   const [viewOpen, setViewOpen] = useState(false);
   const [viewOffer, setViewOffer] = useState<OfferRecord | null>(null);
@@ -68,14 +70,33 @@ export default function AdminOfferManagement() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
+  const expireEndedOffers = async (offers: OfferRecord[]) => {
+    const expiredActive = offers.filter(
+      (o) => o.status === "Active" && isOfferValidityExpired(o.validityTo)
+    );
+    if (expiredActive.length === 0) return offers;
+
+    await Promise.all(
+      expiredActive.map((o) => updateOfferStatus(o.id, "Inactive"))
+    );
+    setExpiredOfferNames(expiredActive.map((o) => o.name));
+
+    const expiredIds = new Set(expiredActive.map((o) => o.id));
+    return offers.map((o) =>
+      expiredIds.has(o.id) ? { ...o, status: "Inactive" as OfferStatus } : o
+    );
+  };
+
   const loadOffers = async () => {
     try {
       const [single, combo] = await Promise.all([
         fetchOffers("single"),
         fetchOffers("combo"),
       ]);
-      setSingleOffers(single);
-      setComboOffers(combo);
+      const all = [...single, ...combo];
+      const refreshed = await expireEndedOffers(all);
+      setSingleOffers(refreshed.filter((o) => o.type === "single"));
+      setComboOffers(refreshed.filter((o) => o.type === "combo"));
     } catch (error) {
       console.error("Failed to load offers", error);
     }
@@ -228,6 +249,26 @@ export default function AdminOfferManagement() {
   return (
     <>
       <DashboardHeader title="Offer management" />
+
+      {expiredOfferNames.length > 0 ? (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">Offer ended</p>
+            <p className="mt-0.5 text-amber-900/90">
+              {expiredOfferNames.join(", ")} — validity ended. These offers were
+              set to Inactive.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExpiredOfferNames([])}
+            className="rounded-lg p-1 text-amber-800 hover:bg-amber-100"
+            aria-label="Dismiss"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl bg-[#F2F2F3] p-3 sm:p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">

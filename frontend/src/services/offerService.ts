@@ -73,6 +73,75 @@ export function parseOfferDate(value: string): OfferDateParts {
   return { day, month, year };
 }
 
+/** Local calendar date from DD/MM/YYYY parts, or null if invalid */
+export function offerDatePartsToLocalDate(parts: OfferDateParts): Date | null {
+  const day = Number(parts.day);
+  const month = Number(parts.month);
+  const year = Number(parts.year);
+  if (!day || !month || !year || String(parts.year).length !== 4) return null;
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+export function startOfTodayLocal(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+/**
+ * Validate offer validity range.
+ * - Start/end must be real calendar dates
+ * - On create, start cannot be before today
+ * - End cannot be before today
+ * - End must be on/after start
+ */
+export function validateOfferDateRange(
+  start: OfferDateParts,
+  end: OfferDateParts,
+  options?: { allowPastStart?: boolean }
+): string | null {
+  const startDate = offerDatePartsToLocalDate(start);
+  const endDate = offerDatePartsToLocalDate(end);
+  if (!startDate || !endDate) {
+    return "Please enter valid Start and End dates.";
+  }
+
+  const today = startOfTodayLocal();
+  if (!options?.allowPastStart && startDate < today) {
+    return "Start date cannot be in the past.";
+  }
+  if (endDate < today) {
+    return "End date cannot be in the past.";
+  }
+  if (endDate < startDate) {
+    return "End date must be on or after the start date.";
+  }
+  return null;
+}
+
+/** True when validityTo (DD/MM/YYYY) end-of-day is before now */
+export function isOfferValidityExpired(validityTo: string): boolean {
+  const end = offerDatePartsToLocalDate(parseOfferDate(validityTo));
+  if (!end) return false;
+  const endOfDay = new Date(
+    end.getFullYear(),
+    end.getMonth(),
+    end.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+  return endOfDay < new Date();
+}
+
 export const INITIAL_SINGLE_OFFERS: OfferRecord[] = Array.from(
   { length: 20 },
   (_, i) => {

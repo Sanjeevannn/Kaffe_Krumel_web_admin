@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import {
   EMPTY_COMBO_OFFER_FORM,
   parseOfferDate,
+  validateOfferDateRange,
 } from "@/services/offerService";
 import type {
   ComboOfferFormData,
@@ -139,6 +140,13 @@ export default function ComboOfferFormModal({
       setError("Please fill Start and End validity dates.");
       return;
     }
+    const dateError = validateOfferDateRange(form.start, form.end, {
+      allowPastStart: mode === "edit",
+    });
+    if (dateError) {
+      setError(dateError);
+      return;
+    }
     setError("");
     setStep(2);
   };
@@ -243,6 +251,13 @@ export default function ComboOfferFormModal({
   const handleStep2Next = () => {
     if (form.products.length === 0) {
       setError("Please add at least one product to the combo.");
+      return;
+    }
+    const dateError = validateOfferDateRange(form.start, form.end, {
+      allowPastStart: mode === "edit",
+    });
+    if (dateError) {
+      setError(dateError);
       return;
     }
     setError("");

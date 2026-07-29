@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import {
   EMPTY_SINGLE_OFFER_FORM,
   parseOfferDate,
+  validateOfferDateRange,
 } from "@/services/offerService";
 import type {
   OfferCatalogProduct,
@@ -173,6 +174,14 @@ export default function SingleOfferFormModal({
   const handleNext = () => {
     if (!isDateComplete(form.start) || !isDateComplete(form.end)) {
       setError("Please fill Start and End validity dates.");
+      return;
+    }
+
+    const dateError = validateOfferDateRange(form.start, form.end, {
+      allowPastStart: mode === "edit",
+    });
+    if (dateError) {
+      setError(dateError);
       return;
     }
 

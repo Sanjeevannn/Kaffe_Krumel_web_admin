@@ -253,6 +253,7 @@ export interface OfferRecord {
   description: string;
   itemsSummary?: string;
   products?: OfferProductItem[];
+  branchId?: number | null;
 }
 
 export interface OfferCatalogProduct {
