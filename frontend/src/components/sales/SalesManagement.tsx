@@ -29,6 +29,14 @@ import type { BranchPerformance, OrderPeriod, SalesProduct, SalesTab } from "@/t
 const PRODUCTS_PAGE_SIZE = 11;
 const BRANCH_PAGE_SIZE = 5;
 
+function todayISODate() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 const EMPTY_SALES_STATS = [
   {
     label: "Product Sold",
@@ -71,12 +79,15 @@ export default function SalesManagement({
   const [statCards, setStatCards] = useState(EMPTY_SALES_STATS);
   const [loadError, setLoadError] = useState("");
   const [period, setPeriod] = useState<OrderPeriod>("now");
+  const [selectedDate, setSelectedDate] = useState(todayISODate());
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [subCategoryFilter, setSubCategoryFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
   const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+
+  const useDateFilter = period === "now";
 
   const subCategories = useMemo(() => {
     const names = new Set<string>();
@@ -87,7 +98,10 @@ export default function SalesManagement({
   useEffect(() => {
     async function loadStats() {
       try {
-        const stats = await fetchSalesStats(period);
+        const stats = await fetchSalesStats(
+          period,
+          useDateFilter ? selectedDate : undefined
+        );
         setStatCards([
           {
             label: "Product Sold",
@@ -123,7 +137,7 @@ export default function SalesManagement({
       }
     }
     loadStats();
-  }, [period]);
+  }, [period, selectedDate, useDateFilter]);
 
   useEffect(() => {
     fetchBranches()
@@ -135,7 +149,9 @@ export default function SalesManagement({
     async function loadProducts() {
       try {
         const products = await fetchTopProducts({
-          period,
+          ...(useDateFilter
+            ? { date: selectedDate }
+            : { period }),
           category: categoryFilter !== "all" ? categoryFilter : undefined,
           subCategory: subCategoryFilter !== "all" ? subCategoryFilter : undefined,
           search: search.trim() || undefined,
@@ -146,20 +162,35 @@ export default function SalesManagement({
       }
     }
     loadProducts();
-  }, [period, categoryFilter, subCategoryFilter, search]);
+  }, [period, selectedDate, useDateFilter, categoryFilter, subCategoryFilter, search]);
 
   useEffect(() => {
     if (!isSuperadmin) return;
     async function loadBranches() {
       try {
-        const branches = await fetchBranchPerformance(period);
+        const branches = await fetchBranchPerformance(
+          period,
+          useDateFilter ? selectedDate : undefined
+        );
         setBranchPerformance(branches);
       } catch (error) {
         console.error("Failed to load branch performance", error);
       }
     }
     loadBranches();
-  }, [period, isSuperadmin]);
+  }, [period, selectedDate, useDateFilter, isSuperadmin]);
+
+  const handlePeriodChange = (next: OrderPeriod) => {
+    setPeriod(next);
+    if (next === "now") setSelectedDate(todayISODate());
+    resetPage();
+  };
+
+  const handleDateChange = (value: string) => {
+    setSelectedDate(value || todayISODate());
+    setPeriod("now");
+    resetPage();
+  };
 
   const filteredProducts = useMemo(() => {
     if (branchFilter === "all") return salesProducts;
@@ -216,7 +247,7 @@ export default function SalesManagement({
             }}
             className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
           >
-            <option value="all">Select Branch</option>
+            <option value="all">All Branches</option>
             {branchOptions.map((name) => (
               <option key={name} value={name}>
                 {name}
@@ -243,7 +274,7 @@ export default function SalesManagement({
           <div className="flex rounded-full bg-white p-1">
             {(
               [
-                { key: "now", label: "Now" },
+                { key: "now", label: "Daily" },
                 { key: "weekly", label: "Weekly" },
                 { key: "monthly", label: "Monthly" },
               ] as const
@@ -251,10 +282,7 @@ export default function SalesManagement({
               <button
                 key={t.key}
                 type="button"
-                onClick={() => {
-                  setPeriod(t.key);
-                  resetPage();
-                }}
+                onClick={() => handlePeriodChange(t.key)}
                 className={cn(
                   "rounded-full px-5 py-2 text-sm font-medium text-[#00562C] transition-colors",
                   period === t.key ? "bg-[#e8f5ee]" : "hover:bg-[#e8f5ee]/60"
@@ -269,7 +297,8 @@ export default function SalesManagement({
             <Calendar className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#00562C]" />
             <Input
               type="date"
-              defaultValue="2025-04-12"
+              value={selectedDate}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="h-11 w-[160px] rounded-full border-none bg-white pl-10"
             />
           </div>

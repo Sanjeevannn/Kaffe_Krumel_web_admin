@@ -167,12 +167,14 @@ export async function updateOfferStatus(id: number, status: OfferStatus) {
 // --- Orders ---
 export async function fetchOrders(params?: {
   period?: OrderPeriod;
+  date?: string;
   status?: OrderStatus;
   branch?: string;
   search?: string;
 }) {
   const searchParams = new URLSearchParams();
-  if (params?.period) searchParams.set("period", params.period);
+  if (params?.date) searchParams.set("date", params.date);
+  else if (params?.period) searchParams.set("period", params.period);
   if (params?.status) searchParams.set("status", params.status);
   if (params?.branch) searchParams.set("branch", params.branch);
   if (params?.search) searchParams.set("search", params.search);
@@ -180,9 +182,17 @@ export async function fetchOrders(params?: {
   return api.get<Order[]>(`/api/orders${q ? `?${q}` : ""}`);
 }
 
-export async function fetchOrderStats(period?: OrderPeriod) {
-  const q = period ? `?period=${period}` : "";
-  return api.get<OrderStats>(`/api/orders/stats${q}`);
+export async function fetchOrderStats(params?: {
+  period?: OrderPeriod;
+  date?: string;
+  branch?: string;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.date) searchParams.set("date", params.date);
+  else if (params?.period) searchParams.set("period", params.period);
+  if (params?.branch) searchParams.set("branch", params.branch);
+  const q = searchParams.toString();
+  return api.get<OrderStats>(`/api/orders/stats${q ? `?${q}` : ""}`);
 }
 
 export async function advanceOrderStatus(id: string) {
@@ -194,24 +204,32 @@ export async function deleteOrder(id: string) {
 }
 
 // --- Sales ---
-export async function fetchSalesStats(period: OrderPeriod = "now") {
+export async function fetchSalesStats(
+  period: OrderPeriod = "now",
+  date?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (date) searchParams.set("date", date);
+  else searchParams.set("period", period);
   return api.get<{
     productSold: string;
     todaysRevenue: string;
     weeklyRevenue: string;
     monthlyRevenue: string;
     totalRevenue: string;
-  }>(`/api/sales/stats?period=${period}`);
+  }>(`/api/sales/stats?${searchParams.toString()}`);
 }
 
 export async function fetchTopProducts(params?: {
   period?: OrderPeriod;
+  date?: string;
   category?: string;
   subCategory?: string;
   search?: string;
 }) {
   const searchParams = new URLSearchParams();
-  if (params?.period) searchParams.set("period", params.period);
+  if (params?.date) searchParams.set("date", params.date);
+  else if (params?.period) searchParams.set("period", params.period);
   if (params?.category) searchParams.set("category", params.category);
   if (params?.subCategory) searchParams.set("subCategory", params.subCategory);
   if (params?.search) searchParams.set("search", params.search);
@@ -219,9 +237,15 @@ export async function fetchTopProducts(params?: {
   return api.get<SalesProduct[]>(`/api/sales/products${q ? `?${q}` : ""}`);
 }
 
-export async function fetchBranchPerformance(period: OrderPeriod = "now") {
+export async function fetchBranchPerformance(
+  period: OrderPeriod = "now",
+  date?: string
+) {
+  const searchParams = new URLSearchParams();
+  if (date) searchParams.set("date", date);
+  else searchParams.set("period", period);
   return api.get<BranchPerformance[]>(
-    `/api/sales/branch-performance?period=${period}`
+    `/api/sales/branch-performance?${searchParams.toString()}`
   );
 }
 

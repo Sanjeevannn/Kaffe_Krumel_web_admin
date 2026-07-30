@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Calendar,
   ChevronDown,
@@ -23,12 +23,21 @@ import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
 import {
   advanceOrderStatus,
   deleteOrder,
+  fetchBranches,
   fetchOrderStats,
   fetchOrders,
 } from "@/services/remoteApi";
 import type { Order, OrderPeriod, OrderStats, OrderStatus } from "@/types";
 
 const PAGE_SIZE = 10;
+
+function todayISODate() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 const STATUS_STYLES: Record<OrderStatus, string> = {
   Pending: "bg-gray-400 text-white",
@@ -66,9 +75,11 @@ export default function OrdersManagement({
     totalRevenue: "0,00 €",
   });
   const [period, setPeriod] = useState<OrderPeriod>("now");
+  const [selectedDate, setSelectedDate] = useState(todayISODate());
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [viewOrder, setViewOrder] = useState<Order | null>(null);
   const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null);
@@ -76,19 +87,36 @@ export default function OrdersManagement({
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const filteredOrders = orders;
+  const useDateFilter = period === "now";
+
+  useEffect(() => {
+    fetchBranches()
+      .then((branches) =>
+        setBranchOptions(
+          branches
+            .map((b) => b.name)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b))
+        )
+      )
+      .catch(() => setBranchOptions([]));
+  }, []);
 
   useEffect(() => {
     async function load() {
       try {
         const [orderList, orderStats] = await Promise.all([
           fetchOrders({
-            period,
+            ...(useDateFilter ? { date: selectedDate } : { period }),
             status:
               statusFilter !== "all" ? (statusFilter as OrderStatus) : undefined,
             branch: branchFilter !== "all" ? branchFilter : undefined,
             search: search.trim() || undefined,
           }),
-          fetchOrderStats(period),
+          fetchOrderStats({
+            ...(useDateFilter ? { date: selectedDate } : { period }),
+            branch: branchFilter !== "all" ? branchFilter : undefined,
+          }),
         ]);
         setOrders(orderList);
         setStats(orderStats);
@@ -97,7 +125,7 @@ export default function OrdersManagement({
       }
     }
     load();
-  }, [period, statusFilter, branchFilter, search]);
+  }, [period, selectedDate, useDateFilter, statusFilter, branchFilter, search]);
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
@@ -106,6 +134,13 @@ export default function OrdersManagement({
 
   const handlePeriodChange = (next: OrderPeriod) => {
     setPeriod(next);
+    if (next === "now") setSelectedDate(todayISODate());
+    setCurrentPage(1);
+  };
+
+  const handleDateChange = (value: string) => {
+    setSelectedDate(value || todayISODate());
+    setPeriod("now");
     setCurrentPage(1);
   };
 
@@ -143,11 +178,6 @@ export default function OrdersManagement({
     setViewOrder(order);
     setDetailsOpen(true);
   };
-
-  const branches = useMemo(
-    () => Array.from(new Set(orders.map((o) => o.branch))),
-    [orders]
-  );
 
   const showingFrom = filteredOrders.length === 0 ? 0 : startIndex + 1;
   const showingTo = Math.min(startIndex + PAGE_SIZE, filteredOrders.length);
@@ -219,8 +249,8 @@ export default function OrdersManagement({
             }}
             className="h-11 rounded-full border-none bg-white px-4 text-sm shadow-sm outline-none"
           >
-            <option value="all">Select Branch</option>
-            {branches.map((b) => (
+            <option value="all">All Branches</option>
+            {branchOptions.map((b) => (
               <option key={b} value={b}>
                 {b}
               </option>
@@ -245,7 +275,7 @@ export default function OrdersManagement({
           <div className="flex rounded-full bg-white p-1">
             {(
               [
-                { key: "now", label: "Now" },
+                { key: "now", label: "Daily" },
                 { key: "weekly", label: "Weekly" },
                 { key: "monthly", label: "Monthly" },
               ] as const
@@ -270,7 +300,8 @@ export default function OrdersManagement({
             <Calendar className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#00562C]" />
             <Input
               type="date"
-              defaultValue="2025-04-12"
+              value={selectedDate}
+              onChange={(e) => handleDateChange(e.target.value)}
               className="h-11 w-[160px] rounded-full border-none bg-white pl-10"
             />
           </div>
