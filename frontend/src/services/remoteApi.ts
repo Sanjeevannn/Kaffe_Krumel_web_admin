@@ -327,6 +327,13 @@ export async function updateStaffStatus(id: number, status: StaffStatus) {
 }
 
 // --- Customers (mobile accounts) ---
+type CustomerAccountBranchApi = {
+  name: string;
+  area: string;
+  totalOrders: number;
+  totalSpend: number;
+};
+
 type CustomerAccountApi = {
   _id: string;
   name?: string;
@@ -334,6 +341,9 @@ type CustomerAccountApi = {
   phone?: string | null;
   authProvider?: string;
   createdAt?: string;
+  orders?: number;
+  spend?: number;
+  branches?: CustomerAccountBranchApi[];
 };
 
 function formatCustomerDate(value?: string) {
@@ -351,6 +361,10 @@ function initialsFrom(name?: string, email?: string) {
   return source.slice(0, 2).toUpperCase();
 }
 
+function formatEuro(amount: number) {
+  return `${amount.toFixed(2).replace(".", ",")} €`;
+}
+
 function mapCustomerAccount(account: CustomerAccountApi): Customer {
   return {
     id: account._id,
@@ -358,13 +372,18 @@ function mapCustomerAccount(account: CustomerAccountApi): Customer {
     initials: initialsFrom(account.name, account.email),
     email: account.email || "",
     phone: account.phone || "Not yet added",
-    orders: 0,
-    spend: "0,00 €",
+    orders: account.orders ?? 0,
+    spend: formatEuro(account.spend ?? 0),
     status: "Active",
     gender: "Not yet added",
     dateOfBirth: "Not yet added",
     accountCreated: formatCustomerDate(account.createdAt),
-    branches: [],
+    branches: (account.branches ?? []).map((b) => ({
+      name: b.name,
+      area: b.area,
+      totalOrders: String(b.totalOrders),
+      totalSpend: formatEuro(b.totalSpend),
+    })),
   };
 }
 
