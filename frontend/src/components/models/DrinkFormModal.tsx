@@ -16,13 +16,12 @@ import { cn } from "@/lib/utils";
 import {
   createEmptyInclusive,
   createEmptySize,
-  DRINK_CUSTOMIZATION_NAMES,
-  DRINK_DEFAULT_OPTIONS,
-  DRINK_GROUPS,
   EMPTY_PRODUCT_FORM,
 } from "@/services/productService";
 import { ApiError, uploadImageFile } from "@/lib/api";
+import { fetchCustomizations } from "@/services/remoteApi";
 import type {
+  CustomizationRecord,
   DrinkInclusiveItem,
   DrinkSizeOption,
   ProductFormData,
@@ -36,6 +35,17 @@ interface DrinkFormModalProps {
   subCategories: string[];
   onOpenChange: (open: boolean) => void;
   onSaveRequest: (data: ProductFormData) => void;
+}
+
+function withCurrentValue(options: string[], current: string) {
+  if (!current || options.includes(current)) return options;
+  return [current, ...options];
+}
+
+function needsPumps(groupName: string, pumps: string) {
+  if (pumps) return true;
+  const g = groupName.toLowerCase();
+  return g.includes("sauce") || g.includes("syrup");
 }
 
 export default function DrinkFormModal({
@@ -53,6 +63,9 @@ export default function DrinkFormModal({
   });
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [customizations, setCustomizations] = useState<CustomizationRecord[]>(
+    []
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -82,7 +95,31 @@ export default function DrinkFormModal({
             sizes: [createEmptySize(1)],
           }
     );
+
+    fetchCustomizations({ status: "Active" })
+      .then(setCustomizations)
+      .catch((err) => {
+        console.error("Failed to load customizations", err);
+        setCustomizations([]);
+      });
   }, [open, mode, product]);
+
+  const customizationNames = customizations.map((c) => c.name);
+
+  const groupsFor = (customizationName: string) => {
+    const selected = customizations.find((c) => c.name === customizationName);
+    return (selected?.groups || [])
+      .filter((g) => g.status === "Active" && g.subtitle)
+      .map((g) => g.subtitle);
+  };
+
+  const optionsFor = (customizationName: string, groupName: string) => {
+    const selected = customizations.find((c) => c.name === customizationName);
+    const group = selected?.groups.find((g) => g.subtitle === groupName);
+    return (group?.options || [])
+      .map((o) => o.name)
+      .filter(Boolean);
+  };
 
   const sizes = form.sizes ?? [];
 
@@ -457,27 +494,44 @@ export default function DrinkFormModal({
                             <SelectField
                               label="Customization Name"
                               value={item.customizationName}
-                              options={DRINK_CUSTOMIZATION_NAMES}
+                              options={withCurrentValue(
+                                customizationNames,
+                                item.customizationName
+                              )}
                               onChange={(value) =>
                                 updateInclusive(size.id, item.id, {
                                   customizationName: value,
+                                  group: "",
+                                  defaultOption: "",
+                                  pumps: "",
                                 })
                               }
                             />
                             <SelectField
                               label="Select Group"
                               value={item.group}
-                              options={DRINK_GROUPS}
+                              options={withCurrentValue(
+                                groupsFor(item.customizationName),
+                                item.group
+                              )}
                               onChange={(value) =>
                                 updateInclusive(size.id, item.id, {
                                   group: value,
+                                  defaultOption: "",
+                                  pumps: "",
                                 })
                               }
                             />
                             <SelectField
                               label="Select Default Option"
                               value={item.defaultOption}
-                              options={DRINK_DEFAULT_OPTIONS}
+                              options={withCurrentValue(
+                                optionsFor(
+                                  item.customizationName,
+                                  item.group
+                                ),
+                                item.defaultOption
+                              )}
                               onChange={(value) =>
                                 updateInclusive(size.id, item.id, {
                                   defaultOption: value,
@@ -485,9 +539,7 @@ export default function DrinkFormModal({
                               }
                             />
 
-                            {(item.group === "Add Sauce" ||
-                              item.group === "Add Syrups" ||
-                              item.pumps) && (
+                            {needsPumps(item.group, item.pumps) && (
                               <Field label="Add how many pumps">
                                 <Input
                                   placeholder="eg: 1"
