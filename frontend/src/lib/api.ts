@@ -5,7 +5,7 @@ import {
   setTokens,
 } from "@/lib/tokenStorage";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://kaffe-krumel-backend.onrender.com";
 
 export class ApiError extends Error {
   status: number;

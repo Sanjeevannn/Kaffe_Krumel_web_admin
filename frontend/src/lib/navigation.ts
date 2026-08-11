@@ -6,6 +6,8 @@ export const SUPERADMIN_NAV: NavItem[] = [
   { label: "Product", href: "/superadmin/product", icon: "cup-soda" },
   { label: "Customization", href: "/superadmin/customization", icon: "settings-2" },
   { label: "Offer", href: "/superadmin/offer", icon: "badge-percent" },
+  { label: "Loyalty points", href: "/superadmin/loyalty-points", icon: "star" },
+  { label: "Coupon", href: "/superadmin/coupon", icon: "ticket-percent" },
   { label: "Sales", href: "/superadmin/sales", icon: "chart-line" },
   { label: "Orders", href: "/superadmin/orders", icon: "clipboard-list" },
   { label: "Branch", href: "/superadmin/branch", icon: "store" },
@@ -17,6 +19,8 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Dashboard", href: "/admin/dashboard", icon: "layout-dashboard" },
   { label: "Product", href: "/admin/product", icon: "cup-soda" },
   { label: "Offer", href: "/admin/offer", icon: "badge-percent" },
+  { label: "Loyalty points", href: "/admin/loyalty-points", icon: "star" },
+  { label: "Coupon", href: "/admin/coupon", icon: "ticket-percent" },
   { label: "Sales", href: "/admin/sales", icon: "chart-line" },
   { label: "Orders", href: "/admin/orders", icon: "clipboard-list" },
 ];

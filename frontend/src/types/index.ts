@@ -30,6 +30,8 @@ export type NavIcon =
   | "cup-soda"
   | "settings-2"
   | "badge-percent"
+  | "ticket-percent"
+  | "star"
   | "chart-line"
   | "clipboard-list"
   | "store"
@@ -349,6 +351,76 @@ export interface SubCategoryRecord {
   name: string;
   category: "Food" | "Drinks";
   image: string;
+}
+
+export type CouponTab = "history" | "manage";
+export type CouponStatus = "Active" | "Inactive" | "Expired";
+
+export interface CouponDateParts {
+  day: string;
+  month: string;
+  year: string;
+}
+
+export interface CouponFormData {
+  title: string;
+  minOrder: string;
+  discount: string;
+  start: CouponDateParts;
+  end: CouponDateParts;
+}
+
+export interface CouponRecord {
+  id: number;
+  couponId: string;
+  title: string;
+  code: string;
+  minOrder: string;
+  discount: string;
+  validityFrom: string;
+  validityTo: string;
+  status: CouponStatus;
+  branch: string;
+}
+
+export interface CouponHistoryRecord {
+  id: number;
+  customerName: string;
+  customerInitials: string;
+  avatarUrl?: string;
+  orderId: string;
+  couponId: string;
+  date: string;
+  branch: string;
+  orderTotal: string;
+  saving: string;
+}
+
+export type LoyaltyTab = "history" | "settings";
+
+export interface LoyaltyPointsHistoryRecord {
+  id: number;
+  date: string;
+  customerName: string;
+  customerInitials: string;
+  avatarUrl?: string;
+  orderId: string;
+  branch: string;
+  points: number;
+  balance: string;
+}
+
+export type LoyaltySettingSection =
+  | "general"
+  | "redemption"
+  | "expiry";
+
+export interface LoyaltySettingRule {
+  id: string;
+  section: LoyaltySettingSection;
+  sectionTitle: string;
+  label: string;
+  value: string;
 }
 
 export type CustomizationStatus = "Active" | "Inactive";
