@@ -439,3 +439,57 @@ export async function saveStripeKeys(payload: {
     stripePublicKey: string;
   }>("/api/stripe-keys", payload);
 }
+
+// --- Loyalty points ---
+export interface LoyaltyRules {
+  pointValueEuro: number;
+  maxRedeemPerOrder: number;
+}
+
+export interface LoyaltyStats {
+  totalIssued: number;
+  totalRedeemed: number;
+  activePoints: number;
+}
+
+export interface LoyaltyHistoryRow {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  branch: string;
+  orderId: string;
+  points: number;
+  type: "earned" | "redeemed";
+  orderAmount: number | null;
+  createdAt: string;
+}
+
+export async function fetchLoyaltyRules() {
+  return api.get<LoyaltyRules>("/api/loyalty/rules");
+}
+
+export async function updateLoyaltyRules(payload: Partial<LoyaltyRules>) {
+  return api.put<LoyaltyRules>("/api/loyalty/rules", payload);
+}
+
+export async function fetchLoyaltyStats(params?: { branch?: string }) {
+  const q = params?.branch && params.branch !== "all" ? `?branch=${encodeURIComponent(params.branch)}` : "";
+  return api.get<LoyaltyStats>(`/api/loyalty/stats${q}`);
+}
+
+export async function fetchLoyaltyHistory(params?: {
+  branch?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.branch && params.branch !== "all") searchParams.set("branch", params.branch);
+  if (params?.search) searchParams.set("search", params.search);
+  if (params?.page) searchParams.set("page", String(params.page));
+  if (params?.limit) searchParams.set("limit", String(params.limit));
+  const q = searchParams.toString();
+  return api.get<{ items: LoyaltyHistoryRow[]; total: number; hasMore: boolean }>(
+    `/api/loyalty/history${q ? `?${q}` : ""}`
+  );
+}

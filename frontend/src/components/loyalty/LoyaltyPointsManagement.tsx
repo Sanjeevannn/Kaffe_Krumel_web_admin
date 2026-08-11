@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,22 +14,46 @@ import LoyaltySettingEditModal from "@/components/models/LoyaltySettingEditModal
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  INITIAL_LOYALTY_HISTORY,
-  INITIAL_LOYALTY_SETTINGS,
-  LOYALTY_BRANCHES,
-  LOYALTY_SETTING_SECTIONS,
-} from "@/services/loyaltyService";
-import type {
-  LoyaltyPointsHistoryRecord,
-  LoyaltySettingRule,
-  LoyaltyTab,
-} from "@/types";
+  fetchBranches,
+  fetchLoyaltyHistory,
+  fetchLoyaltyRules,
+  fetchLoyaltyStats,
+  updateLoyaltyRules,
+  type LoyaltyHistoryRow,
+  type LoyaltyRules,
+  type LoyaltyStats,
+} from "@/services/remoteApi";
+import type { LoyaltySettingRule, LoyaltyTab } from "@/types";
 
 const PAGE_SIZE = 10;
 
 interface LoyaltyPointsManagementProps {
-  /** admin = view-only; superadmin = can edit settings */
   variant?: "admin" | "superadmin";
+}
+
+const initialsFrom = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+};
+
+function rulesToSettings(rules: LoyaltyRules): LoyaltySettingRule[] {
+  return [
+    {
+      id: "maxRedeemPerOrder",
+      section: "general",
+      sectionTitle: "General Setting",
+      label: "Minimum points needed for redemption",
+      value: String(rules.maxRedeemPerOrder),
+    },
+    {
+      id: "pointValueEuro",
+      section: "general",
+      sectionTitle: "General Setting",
+      label: "Points per euro spent",
+      value: String(rules.pointValueEuro),
+    },
+  ];
 }
 
 export default function LoyaltyPointsManagement({
@@ -39,14 +63,17 @@ export default function LoyaltyPointsManagement({
   const canEdit = isSuperadmin;
 
   const [tab, setTab] = useState<LoyaltyTab>("history");
-  const [history] = useState<LoyaltyPointsHistoryRecord[]>(
-    INITIAL_LOYALTY_HISTORY
-  );
-  const [settings, setSettings] = useState<LoyaltySettingRule[]>(
-    INITIAL_LOYALTY_SETTINGS
-  );
+  const [history, setHistory] = useState<LoyaltyHistoryRow[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [stats, setStats] = useState<LoyaltyStats>({
+    totalIssued: 0,
+    totalRedeemed: 0,
+    activePoints: 0,
+  });
+  const [settings, setSettings] = useState<LoyaltySettingRule[]>([]);
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
 
   const [editOpen, setEditOpen] = useState(false);
@@ -56,47 +83,79 @@ export default function LoyaltyPointsManagement({
 
   const resetPage = () => setCurrentPage(1);
 
-  const filteredHistory = useMemo(() => {
-    let result = history;
-    if (isSuperadmin && branchFilter !== "all") {
-      result = result.filter((row) => row.branch === branchFilter);
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (row) =>
-          row.customerName.toLowerCase().includes(q) ||
-          row.orderId.toLowerCase().includes(q) ||
-          row.branch.toLowerCase().includes(q) ||
-          row.date.includes(q)
-      );
-    }
-    return result;
-  }, [history, search, branchFilter, isSuperadmin]);
+  useEffect(() => {
+    if (!isSuperadmin) return;
+    fetchBranches()
+      .then((branches) =>
+        setBranchOptions(
+          branches
+            .map((b) => b.name)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b))
+        )
+      )
+      .catch(() => setBranchOptions([]));
+  }, [isSuperadmin]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredHistory.length / PAGE_SIZE));
+  useEffect(() => {
+    fetchLoyaltyRules()
+      .then((rules) => setSettings(rulesToSettings(rules)))
+      .catch(() => setSettings([]));
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const branch = isSuperadmin && branchFilter !== "all" ? branchFilter : undefined;
+        const [historyPage, loyaltyStats] = await Promise.all([
+          fetchLoyaltyHistory({
+            branch,
+            search: search.trim() || undefined,
+            page: currentPage,
+            limit: PAGE_SIZE,
+          }),
+          fetchLoyaltyStats({ branch }),
+        ]);
+        setHistory(historyPage.items);
+        setHistoryTotal(historyPage.total);
+        setStats(loyaltyStats);
+      } catch (error) {
+        console.error("Failed to load loyalty points data", error);
+      }
+    }
+    load();
+  }, [isSuperadmin, branchFilter, search, currentPage]);
+
+  const totalPages = Math.max(1, Math.ceil(historyTotal / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
-  const startIndex = (safePage - 1) * PAGE_SIZE;
-  const pageRows = filteredHistory.slice(startIndex, startIndex + PAGE_SIZE);
-  const showingFrom = filteredHistory.length === 0 ? 0 : startIndex + 1;
-  const showingTo = Math.min(startIndex + PAGE_SIZE, filteredHistory.length);
+  const showingFrom = historyTotal === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const showingTo = Math.min(safePage * PAGE_SIZE, historyTotal);
 
-  const pageNumbers = Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-    if (totalPages <= 3) return i + 1;
-    if (safePage <= 2) return i + 1;
-    if (safePage >= totalPages - 1) return totalPages - 2 + i;
-    return safePage - 1 + i;
-  });
+  const pageNumbers = useMemo(
+    () =>
+      Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+        if (totalPages <= 3) return i + 1;
+        if (safePage <= 2) return i + 1;
+        if (safePage >= totalPages - 1) return totalPages - 2 + i;
+        return safePage - 1 + i;
+      }),
+    [totalPages, safePage]
+  );
 
   const openEdit = (rule: LoyaltySettingRule) => {
     setEditingRule(rule);
     setEditOpen(true);
   };
 
-  const handleSaveSetting = (ruleId: string, value: string) => {
-    setSettings((prev) =>
-      prev.map((rule) => (rule.id === ruleId ? { ...rule, value } : rule))
-    );
+  const handleSaveSetting = async (ruleId: string, value: string) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return;
+    try {
+      const updated = await updateLoyaltyRules({ [ruleId]: numeric });
+      setSettings(rulesToSettings(updated));
+    } catch (error) {
+      console.error("Failed to update loyalty rule", error);
+    }
   };
 
   return (
@@ -147,7 +206,7 @@ export default function LoyaltyPointsManagement({
                 className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
               >
                 <option value="all">Select Branch</option>
-                {LOYALTY_BRANCHES.map((name) => (
+                {branchOptions.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>
@@ -161,15 +220,15 @@ export default function LoyaltyPointsManagement({
         {tab === "history" ? (
           <>
             <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <StatCard label="Total points issued" value="28,876" />
+              <StatCard label="Total points issued" value={String(stats.totalIssued)} />
               <StatCard
                 label="Total points redeemed"
-                value="12,000"
+                value={String(stats.totalRedeemed)}
                 valueClassName="text-[#FF0000]"
               />
               <StatCard
                 label="Active points"
-                value="10,876"
+                value={String(stats.activePoints)}
                 valueClassName="text-[#49AE20]"
               />
             </div>
@@ -203,44 +262,59 @@ export default function LoyaltyPointsManagement({
                     </tr>
                   </thead>
                   <tbody>
-                    {pageRows.map((row, index) => (
-                      <tr
-                        key={row.id}
-                        className={cn(
-                          "border-b border-[#F2F2F3] last:border-none",
-                          index % 2 === 1 && "bg-[#FAFAFA]"
-                        )}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex size-8 items-center justify-center rounded-full bg-[#CBF0CB] text-xs font-semibold text-[#00562C]">
-                              {row.customerInitials}
-                            </span>
-                            <span className="font-medium text-gray-900">
-                              {row.customerName}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{row.orderId}</td>
-                        <td className="px-4 py-3 text-gray-700">{row.date}</td>
-                        {isSuperadmin ? (
-                          <td className="px-4 py-3 text-gray-700">{row.branch}</td>
-                        ) : null}
+                    {history.length === 0 ? (
+                      <tr>
                         <td
+                          colSpan={isSuperadmin ? 6 : 5}
+                          className="px-4 py-10 text-center text-gray-500"
+                        >
+                          No loyalty activity found.
+                        </td>
+                      </tr>
+                    ) : (
+                      history.map((row, index) => (
+                        <tr
+                          key={row.id}
                           className={cn(
-                            "px-4 py-3 font-semibold",
-                            row.points >= 0
-                              ? "text-[#49AE20]"
-                              : "text-[#FF0000]"
+                            "border-b border-[#F2F2F3] last:border-none",
+                            index % 2 === 1 && "bg-[#FAFAFA]"
                           )}
                         >
-                          {row.points >= 0
-                            ? `+ ${row.points}`
-                            : `- ${Math.abs(row.points)}`}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{row.balance}</td>
-                      </tr>
-                    ))}
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex size-8 items-center justify-center rounded-full bg-[#CBF0CB] text-xs font-semibold text-[#00562C]">
+                                {initialsFrom(row.customerName || "?")}
+                              </span>
+                              <span className="font-medium text-gray-900">
+                                {row.customerName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{row.orderId}</td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {new Date(row.createdAt).toLocaleDateString("en-GB")}
+                          </td>
+                          {isSuperadmin ? (
+                            <td className="px-4 py-3 text-gray-700">{row.branch}</td>
+                          ) : null}
+                          <td
+                            className={cn(
+                              "px-4 py-3 font-semibold",
+                              row.points >= 0
+                                ? "text-[#49AE20]"
+                                : "text-[#FF0000]"
+                            )}
+                          >
+                            {row.points >= 0
+                              ? `+ ${row.points}`
+                              : `- ${Math.abs(row.points)}`}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {row.orderAmount != null ? `€ ${row.orderAmount.toFixed(2)}` : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -250,7 +324,7 @@ export default function LoyaltyPointsManagement({
               <p className="text-sm text-gray-500">
                 Showing {String(showingFrom).padStart(2, "0")}-
                 {String(showingTo).padStart(2, "0")} of{" "}
-                {filteredHistory.length} Points history
+                {historyTotal} Points history
               </p>
               <div className="flex items-center gap-1">
                 <button
@@ -293,64 +367,56 @@ export default function LoyaltyPointsManagement({
           </>
         ) : (
           <div className="grid max-w-2xl grid-cols-1 gap-4">
-            {LOYALTY_SETTING_SECTIONS.map((section) => {
-              const rules = settings.filter((r) => r.section === section.key);
-              return (
-                <div
-                  key={section.key}
-                  className="overflow-hidden rounded-2xl bg-white p-4 shadow-sm"
-                >
-                  <h3 className="mb-3 text-base font-bold text-gray-900">
-                    {section.title}
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-[#F2F2F3] text-gray-500">
-                          <th className="py-2 pr-3 font-medium">Rule</th>
-                          <th className="py-2 pr-3 font-medium">Value</th>
-                          {canEdit ? (
-                            <th className="py-2 font-medium">Action</th>
-                          ) : null}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rules.map((rule) => (
-                          <tr
-                            key={rule.id}
-                            className="border-b border-[#F2F2F3] last:border-none"
-                          >
-                            <td className="py-3 pr-3 text-gray-800">
-                              {rule.label}
-                            </td>
-                            <td className="py-3 pr-3 font-semibold text-gray-900">
-                              {rule.value}
-                            </td>
-                            {canEdit ? (
-                              <td className="py-3">
-                                <button
-                                  type="button"
-                                  onClick={() => openEdit(rule)}
-                                  className="inline-flex size-8 items-center justify-center rounded-lg border border-[#00562C]/20 bg-[#E8F7EA] text-[#00562C] hover:bg-[#CBF0CB]"
-                                  aria-label={`Edit ${rule.label}`}
-                                >
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src="/edit.svg"
-                                    alt=""
-                                    className="size-3.5"
-                                  />
-                                </button>
-                              </td>
-                            ) : null}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
+            <div className="overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
+              <h3 className="mb-3 text-base font-bold text-gray-900">
+                General Settings
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-[#F2F2F3] text-gray-500">
+                      <th className="py-2 pr-3 font-medium">Rule</th>
+                      <th className="py-2 pr-3 font-medium">Value</th>
+                      {canEdit ? (
+                        <th className="py-2 font-medium">Action</th>
+                      ) : null}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {settings.map((rule) => (
+                      <tr
+                        key={rule.id}
+                        className="border-b border-[#F2F2F3] last:border-none"
+                      >
+                        <td className="py-3 pr-3 text-gray-800">
+                          {rule.label}
+                        </td>
+                        <td className="py-3 pr-3 font-semibold text-gray-900">
+                          {rule.value}
+                        </td>
+                        {canEdit ? (
+                          <td className="py-3">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(rule)}
+                              className="inline-flex size-8 items-center justify-center rounded-lg border border-[#00562C]/20 bg-[#E8F7EA] text-[#00562C] hover:bg-[#CBF0CB]"
+                              aria-label={`Edit ${rule.label}`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src="/edit.svg"
+                                alt=""
+                                className="size-3.5"
+                              />
+                            </button>
+                          </td>
+                        ) : null}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>
