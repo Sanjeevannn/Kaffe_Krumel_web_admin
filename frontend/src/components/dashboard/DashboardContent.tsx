@@ -92,13 +92,11 @@ export default function DashboardContent() {
             ),
           ]);
 
-        if (
-          ordersResult.status === "rejected" ||
-          productsResult.status === "rejected"
-        ) {
-          throw ordersResult.status === "rejected"
-            ? ordersResult.reason
-            : productsResult.reason;
+        if (ordersResult.status === "rejected") {
+          throw ordersResult.reason;
+        }
+        if (productsResult.status === "rejected") {
+          throw productsResult.reason;
         }
 
         const orders = ordersResult.value;
