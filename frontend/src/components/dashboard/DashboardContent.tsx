@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DashboardToolbar from "@/components/dashboard/DashboardToolbar";
 import StatCard from "@/components/dashboard/StatCard";
+import { useAuth } from "@/contexts/AuthContext";
 import { buildDashboardStats } from "@/lib/dashboardStats";
 import {
   fetchBranches,
@@ -27,7 +28,42 @@ type DashboardBaseData = {
   staff: StaffUser[];
 };
 
+function fallbackBranch(user: NonNullable<ReturnType<typeof useAuth>["user"]>): BranchRecord[] {
+  if (!user?.branch) return [];
+  const emptyHours = {
+    openHour: "",
+    openMinute: "",
+    openPeriod: "AM" as const,
+    closeHour: "",
+    closeMinute: "",
+    closePeriod: "PM" as const,
+  };
+  return [
+    {
+      id: user.branchId ?? 0,
+      name: user.branch,
+      manager: "",
+      location: "",
+      status: "Active",
+      description: "",
+      locationName: "",
+      locationCode: "",
+      street: "",
+      city: "",
+      country: "",
+      latitude: "",
+      longitude: "",
+      contactNumber: "",
+      email: "",
+      weekdayHours: emptyHours,
+      saturdayHours: emptyHours,
+      sundayHours: emptyHours,
+    },
+  ];
+}
+
 export default function DashboardContent() {
+  const { user, loading: authLoading } = useAuth();
   const [category, setCategory] = useState<DashboardCategory>("all");
   const [baseData, setBaseData] = useState<DashboardBaseData | null>(null);
   const [stats, setStats] = useState<DashboardStat[]>([]);
@@ -35,18 +71,44 @@ export default function DashboardContent() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (authLoading || !user) return;
+
     let cancelled = false;
     setLoading(true);
     setError("");
 
     async function load() {
       try {
-        const [orders, products, branches, staff] = await Promise.all([
-          fetchOrders({ period: "all" }),
-          fetchProducts(),
-          fetchBranches(),
-          fetchStaffUsers(),
-        ]);
+        const branchFilter =
+          user?.role === "admin" && user.branch ? user.branch : undefined;
+
+        const [ordersResult, productsResult, branchesResult, staffResult] =
+          await Promise.allSettled([
+            fetchOrders({ period: "all", branch: branchFilter }),
+            fetchProducts(),
+            fetchBranches(),
+            fetchStaffUsers(
+              branchFilter ? { branch: branchFilter } : undefined
+            ),
+          ]);
+
+        if (
+          ordersResult.status === "rejected" ||
+          productsResult.status === "rejected"
+        ) {
+          throw ordersResult.status === "rejected"
+            ? ordersResult.reason
+            : productsResult.reason;
+        }
+
+        const orders = ordersResult.value;
+        const products = productsResult.value;
+        const branches =
+          branchesResult.status === "fulfilled"
+            ? branchesResult.value
+            : fallbackBranch(user);
+        const staff =
+          staffResult.status === "fulfilled" ? staffResult.value : [];
 
         if (cancelled) return;
 
@@ -71,7 +133,7 @@ export default function DashboardContent() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (!baseData) return;
@@ -85,6 +147,8 @@ export default function DashboardContent() {
       )
     );
   }, [category, baseData]);
+
+  const showLoading = authLoading || loading;
 
   return (
     <>
@@ -102,7 +166,7 @@ export default function DashboardContent() {
           {stats.map((stat) => (
             <StatCard key={stat.label} {...stat} />
           ))}
-          {loading
+          {showLoading
             ? Array.from({ length: Math.max(0, 10 - stats.length) }).map(
                 (_, index) => (
                   <div
