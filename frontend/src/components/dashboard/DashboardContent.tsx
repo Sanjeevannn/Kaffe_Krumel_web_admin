@@ -104,7 +104,9 @@ export default function DashboardContent() {
         const branches =
           branchesResult.status === "fulfilled"
             ? branchesResult.value
-            : fallbackBranch(user);
+            : user
+              ? fallbackBranch(user)
+              : [];
         const staff =
           staffResult.status === "fulfilled" ? staffResult.value : [];
 
