@@ -69,10 +69,10 @@ export default function OrdersManagement({
     completedOrders: 0,
     totalCustomers: 0,
     productSold: "0",
-    todaysRevenue: "0,00 €",
-    weeklyRevenue: "0,00 €",
-    monthlyRevenue: "0,00 €",
-    totalRevenue: "0,00 €",
+    todaysRevenue: "0.00 €",
+    weeklyRevenue: "0.00 €",
+    monthlyRevenue: "0.00 €",
+    totalRevenue: "0.00 €",
   });
   const [period, setPeriod] = useState<OrderPeriod>("now");
   const [selectedDate, setSelectedDate] = useState(todayISODate());
@@ -485,6 +485,7 @@ export default function OrdersManagement({
       <OrderDetailsModal
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
+        role={role}
         order={
           viewOrder
             ? orders.find((o) => o.id === viewOrder.id) ?? viewOrder

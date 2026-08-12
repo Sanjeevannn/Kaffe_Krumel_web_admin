@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BadgePercent,
   ChevronDown,
@@ -20,17 +20,23 @@ import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { ApiError } from "@/lib/api";
 import {
-  buildCouponCode,
-  COUPON_BRANCHES,
   couponStatusClass,
   couponStatusLabel,
-  formatCouponDate,
-  INITIAL_COUPON_HISTORY,
-  INITIAL_COUPONS,
-  nextCouponId,
+  formatEuro,
+  mapCouponHistoryRow,
   resolveCouponStatus,
 } from "@/services/couponService";
+import {
+  createCoupon,
+  deleteCoupon as deleteCouponApi,
+  fetchBranches,
+  fetchCouponHistory,
+  fetchCoupons,
+  updateCoupon,
+  updateCouponStatus,
+} from "@/services/remoteApi";
 import type {
   CouponFormData,
   CouponHistoryRecord,
@@ -53,8 +59,9 @@ export default function CouponManagement({
   const canManage = !isSuperadmin;
 
   const [tab, setTab] = useState<CouponTab>("history");
-  const [coupons, setCoupons] = useState<CouponRecord[]>(INITIAL_COUPONS);
-  const [history] = useState<CouponHistoryRecord[]>(INITIAL_COUPON_HISTORY);
+  const [coupons, setCoupons] = useState<CouponRecord[]>([]);
+  const [history, setHistory] = useState<CouponHistoryRecord[]>([]);
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
@@ -71,14 +78,60 @@ export default function CouponManagement({
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [actionError, setActionError] = useState("");
 
   const resetPage = () => setCurrentPage(1);
 
+  const loadCoupons = async () => {
+    try {
+      const list = await fetchCoupons();
+      setCoupons(list);
+    } catch (error) {
+      console.error("Failed to load coupons", error);
+      setCoupons([]);
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      const branch =
+        isSuperadmin && branchFilter !== "all" ? branchFilter : undefined;
+      const data = await fetchCouponHistory({
+        branch,
+        page: 1,
+        limit: 100,
+      });
+      setHistory(data.items.map(mapCouponHistoryRow));
+    } catch (error) {
+      console.error("Failed to load coupon history", error);
+      setHistory([]);
+    }
+  };
+
+  useEffect(() => {
+    if (!isSuperadmin) return;
+    fetchBranches()
+      .then((branches) =>
+        setBranchOptions(
+          branches
+            .map((b) => b.name)
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b))
+        )
+      )
+      .catch(() => setBranchOptions([]));
+  }, [isSuperadmin]);
+
+  useEffect(() => {
+    void loadCoupons();
+  }, []);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [isSuperadmin, branchFilter]);
+
   const filteredHistory = useMemo(() => {
     let result = history;
-    if (branchFilter !== "all") {
-      result = result.filter((row) => row.branch === branchFilter);
-    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -90,14 +143,14 @@ export default function CouponManagement({
       );
     }
     return result;
-  }, [history, search, branchFilter]);
+  }, [history, search]);
 
   const filteredCoupons = useMemo(() => {
     let result = coupons.map((c) => ({
       ...c,
       status: resolveCouponStatus(c.validityTo, c.status),
     }));
-    if (branchFilter !== "all") {
+    if (isSuperadmin && branchFilter !== "all") {
       result = result.filter((c) => c.branch === branchFilter);
     }
     if (statusFilter !== "all") {
@@ -115,7 +168,7 @@ export default function CouponManagement({
       );
     }
     return result;
-  }, [coupons, search, statusFilter, branchFilter]);
+  }, [coupons, search, statusFilter, branchFilter, isSuperadmin]);
 
   const source = tab === "history" ? filteredHistory : filteredCoupons;
   const totalPages = Math.max(1, Math.ceil(source.length / PAGE_SIZE));
@@ -128,6 +181,11 @@ export default function CouponManagement({
   const activeCoupons = coupons.filter(
     (c) => resolveCouponStatus(c.validityTo, c.status) === "Active"
   ).length;
+
+  const totalDiscountGiven = history.reduce(
+    (sum, row) => sum + (row.savingAmount || 0),
+    0
+  );
 
   const currentViewCoupon = viewCoupon
     ? (coupons.find((c) => c.id === viewCoupon.id) ?? viewCoupon)
@@ -157,78 +215,75 @@ export default function CouponManagement({
   };
 
   const handleSaveRequest = (data: CouponFormData) => {
+    setActionError("");
     setPendingForm(data);
     setSaveConfirmOpen(true);
   };
 
-  const handleConfirmSave = () => {
+  const handleConfirmSave = async () => {
     if (!pendingForm) return;
-    const validityFrom = formatCouponDate(pendingForm.start);
-    const validityTo = formatCouponDate(pendingForm.end);
-    const status = resolveCouponStatus(validityTo, "Active");
-    const branch =
-      branchFilter !== "all" ? branchFilter : COUPON_BRANCHES[0];
-
-    if (formMode === "create") {
-      const ids = nextCouponId(coupons);
-      const created: CouponRecord = {
-        id: ids.id,
-        couponId: ids.couponId,
-        title: pendingForm.title,
-        code: buildCouponCode(pendingForm.title),
-        minOrder: pendingForm.minOrder,
-        discount: pendingForm.discount,
-        validityFrom,
-        validityTo,
-        status,
-        branch,
-      };
-      setCoupons((prev) => [created, ...prev]);
-      setTab("manage");
-      setCurrentPage(1);
-    } else if (editingCoupon) {
-      setCoupons((prev) =>
-        prev.map((c) =>
-          c.id === editingCoupon.id
-            ? {
-                ...c,
-                title: pendingForm.title,
-                code: buildCouponCode(pendingForm.title),
-                minOrder: pendingForm.minOrder,
-                discount: pendingForm.discount,
-                validityFrom,
-                validityTo,
-                status,
-              }
-            : c
-        )
-      );
+    try {
+      if (formMode === "create") {
+        await createCoupon(pendingForm);
+        setTab("manage");
+        setCurrentPage(1);
+      } else if (editingCoupon) {
+        const updated = await updateCoupon(editingCoupon.id, pendingForm);
+        setViewCoupon((prev) =>
+          prev?.id === editingCoupon.id ? updated : prev
+        );
+      }
+      setPendingForm(null);
+      setEditingCoupon(null);
+      setFormOpen(false);
+      setSaveConfirmOpen(false);
+      setActionError("");
+      await loadCoupons();
+    } catch (error) {
+      const message =
+        error instanceof ApiError || error instanceof Error
+          ? error.message
+          : "Failed to save coupon";
+      setActionError(message);
+      setSaveConfirmOpen(false);
     }
-
-    setPendingForm(null);
-    setEditingCoupon(null);
-    setFormOpen(false);
-    setSaveConfirmOpen(false);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (deleteId == null) return;
-    setCoupons((prev) => prev.filter((c) => c.id !== deleteId));
-    if (viewCoupon?.id === deleteId) {
-      setViewOpen(false);
-      setViewCoupon(null);
+    try {
+      await deleteCouponApi(deleteId);
+      if (viewCoupon?.id === deleteId) {
+        setViewOpen(false);
+        setViewCoupon(null);
+      }
+      setDeleteId(null);
+      setDeleteOpen(false);
+      setActionError("");
+      await loadCoupons();
+    } catch (error) {
+      const message =
+        error instanceof ApiError || error instanceof Error
+          ? error.message
+          : "Failed to delete coupon";
+      setActionError(message);
     }
-    setDeleteId(null);
-    setDeleteOpen(false);
   };
 
-  const handleToggleStatus = (couponId: number, status: CouponStatus) => {
-    setCoupons((prev) =>
-      prev.map((c) => (c.id === couponId ? { ...c, status } : c))
-    );
-    setViewCoupon((prev) =>
-      prev?.id === couponId ? { ...prev, status } : prev
-    );
+  const handleToggleStatus = async (
+    couponId: number,
+    status: CouponStatus
+  ) => {
+    if (status !== "Active" && status !== "Inactive") return;
+    try {
+      const updated = await updateCouponStatus(couponId, status);
+      setCoupons((prev) =>
+        prev.map((c) => (c.id === couponId ? updated : c))
+      );
+      setViewCoupon((prev) => (prev?.id === couponId ? updated : prev));
+    } catch (error) {
+      console.error("Failed to update coupon status", error);
+    }
   };
 
   const pageNumbers = Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
@@ -243,6 +298,12 @@ export default function CouponManagement({
   return (
     <>
       <DashboardHeader title="Coupon management" />
+
+      {actionError ? (
+        <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600">
+          {actionError}
+        </p>
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl bg-[#F2F2F3] p-3 sm:p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -292,7 +353,7 @@ export default function CouponManagement({
                 className="h-10 min-w-[170px] cursor-pointer appearance-none rounded-full border-none bg-white py-2 pr-9 pl-9 text-sm text-gray-700 outline-none"
               >
                 <option value="all">Select Branch</option>
-                {COUPON_BRANCHES.map((name) => (
+                {branchOptions.map((name) => (
                   <option key={name} value={name}>
                     {name}
                   </option>
@@ -306,8 +367,14 @@ export default function CouponManagement({
         {tab === "history" ? (
           <>
             <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <HistoryStatCard label="Total coupons used" value="28,876" />
-              <HistoryStatCard label="Total discount given" value="€ 123.00" />
+              <HistoryStatCard
+                label="Total coupons used"
+                value={history.length.toLocaleString()}
+              />
+              <HistoryStatCard
+                label="Total discount given"
+                value={formatEuro(String(totalDiscountGiven))}
+              />
               <HistoryStatCard
                 label="Active Coupons"
                 value={String(activeCoupons)}
@@ -344,35 +411,52 @@ export default function CouponManagement({
                     </tr>
                   </thead>
                   <tbody>
-                    {(pageRows as CouponHistoryRecord[]).map((row) => (
-                      <tr
-                        key={row.id}
-                        className="border-b border-[#F2F2F3] last:border-none"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex size-8 items-center justify-center rounded-full bg-[#CBF0CB] text-xs font-semibold text-[#00562C]">
-                              {row.customerInitials}
-                            </span>
-                            <span className="font-medium text-gray-900">
-                              {row.customerName}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{row.orderId}</td>
-                        <td className="px-4 py-3 text-gray-700">{row.couponId}</td>
-                        <td className="px-4 py-3 text-gray-700">{row.date}</td>
-                        {showBranchColumn ? (
-                          <td className="px-4 py-3 text-gray-700">{row.branch}</td>
-                        ) : null}
-                        <td className="px-4 py-3 text-gray-700">
-                          {row.orderTotal}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-[#FF0000]">
-                          {row.saving}
+                    {pageRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={showBranchColumn ? 7 : 6}
+                          className="px-4 py-8 text-center text-gray-500"
+                        >
+                          No coupon history yet.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      (pageRows as CouponHistoryRecord[]).map((row) => (
+                        <tr
+                          key={row.id}
+                          className="border-b border-[#F2F2F3] last:border-none"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex size-8 items-center justify-center rounded-full bg-[#CBF0CB] text-xs font-semibold text-[#00562C]">
+                                {row.customerInitials}
+                              </span>
+                              <span className="font-medium text-gray-900">
+                                {row.customerName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {row.orderId}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {row.couponId}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{row.date}</td>
+                          {showBranchColumn ? (
+                            <td className="px-4 py-3 text-gray-700">
+                              {row.branch}
+                            </td>
+                          ) : null}
+                          <td className="px-4 py-3 text-gray-700">
+                            {row.orderTotal}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-[#FF0000]">
+                            {row.saving}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -441,66 +525,77 @@ export default function CouponManagement({
                     </tr>
                   </thead>
                   <tbody>
-                    {(pageRows as CouponRecord[]).map((coupon) => (
-                      <tr
-                        key={coupon.id}
-                        className="border-b border-[#F2F2F3] last:border-none"
-                      >
-                        <td className="px-4 py-3 text-gray-700">
-                          {coupon.couponId}
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-900">
-                          {coupon.title}
-                        </td>
-                        {showBranchColumn ? (
-                          <td className="px-4 py-3 text-gray-700">
-                            {coupon.branch}
-                          </td>
-                        ) : null}
-                        <td className="px-4 py-3 text-gray-700">
-                          {coupon.discount} %
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {coupon.validityFrom} - {coupon.validityTo}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={cn(
-                              "inline-flex rounded-full px-3 py-1 text-xs font-medium text-white",
-                              couponStatusClass(coupon.status)
-                            )}
-                          >
-                            {couponStatusLabel(coupon.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openView(coupon)}
-                              className="rounded-lg p-1.5 text-[#00562C] hover:bg-[#F2F2F3]"
-                              aria-label="View coupon"
-                            >
-                              <Eye className="size-4" />
-                            </button>
-                            {canManage ? (
-                              <>
-                                <ActionIcon
-                                  type="edit"
-                                  onClick={() => openEdit(coupon)}
-                                  label="Edit coupon"
-                                />
-                                <ActionIcon
-                                  type="delete"
-                                  onClick={() => openDelete(coupon.id)}
-                                  label="Delete coupon"
-                                />
-                              </>
-                            ) : null}
-                          </div>
+                    {pageRows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={showBranchColumn ? 7 : 6}
+                          className="px-4 py-8 text-center text-gray-500"
+                        >
+                          No coupons yet.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      (pageRows as CouponRecord[]).map((coupon) => (
+                        <tr
+                          key={coupon.id}
+                          className="border-b border-[#F2F2F3] last:border-none"
+                        >
+                          <td className="px-4 py-3 text-gray-700">
+                            {coupon.couponId}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-900">
+                            {coupon.title}
+                          </td>
+                          {showBranchColumn ? (
+                            <td className="px-4 py-3 text-gray-700">
+                              {coupon.branch}
+                            </td>
+                          ) : null}
+                          <td className="px-4 py-3 text-gray-700">
+                            {coupon.discount} %
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {coupon.validityFrom} - {coupon.validityTo}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={cn(
+                                "inline-flex rounded-full px-3 py-1 text-xs font-medium text-white",
+                                couponStatusClass(coupon.status)
+                              )}
+                            >
+                              {couponStatusLabel(coupon.status)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openView(coupon)}
+                                className="rounded-lg p-1.5 text-[#00562C] hover:bg-[#F2F2F3]"
+                                aria-label="View coupon"
+                              >
+                                <Eye className="size-4" />
+                              </button>
+                              {canManage ? (
+                                <>
+                                  <ActionIcon
+                                    type="edit"
+                                    onClick={() => openEdit(coupon)}
+                                    label="Edit coupon"
+                                  />
+                                  <ActionIcon
+                                    type="delete"
+                                    onClick={() => openDelete(coupon.id)}
+                                    label="Delete coupon"
+                                  />
+                                </>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -566,12 +661,16 @@ export default function CouponManagement({
           <ConfirmSaveCouponDialog
             open={saveConfirmOpen}
             onOpenChange={setSaveConfirmOpen}
-            onConfirm={handleConfirmSave}
+            onConfirm={() => {
+              void handleConfirmSave();
+            }}
           />
           <DeleteCouponDialog
             open={deleteOpen}
             onOpenChange={setDeleteOpen}
-            onConfirm={handleConfirmDelete}
+            onConfirm={() => {
+              void handleConfirmDelete();
+            }}
           />
         </>
       ) : null}

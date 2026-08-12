@@ -88,7 +88,7 @@ export const INITIAL_COUPONS: CouponRecord[] = [
 export const INITIAL_COUPON_HISTORY: CouponHistoryRecord[] = Array.from(
   { length: 30 },
   (_, i) => ({
-    id: i + 1,
+    id: String(i + 1),
     customerName: "Kishana",
     customerInitials: "YK",
     orderId: "OR123",
@@ -97,6 +97,7 @@ export const INITIAL_COUPON_HISTORY: CouponHistoryRecord[] = Array.from(
     branch: COUPON_BRANCHES[i % COUPON_BRANCHES.length],
     orderTotal: "€ 123.00",
     saving: "-€8.90",
+    savingAmount: 8.9,
   })
 );
 
@@ -193,4 +194,44 @@ export function formatEuro(value: string) {
 export function formatDiscountLabel(discount: string) {
   const cleaned = discount.replace(/[^\d.]/g, "");
   return `${cleaned || "0"}% OFF`;
+}
+
+export function couponInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return (name.slice(0, 2) || "?").toUpperCase();
+}
+
+export function formatCouponHistoryDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${date.getFullYear()}`;
+}
+
+export function mapCouponHistoryRow(row: {
+  id: string;
+  customerName: string;
+  orderId: string;
+  couponId: string;
+  branch: string;
+  orderTotal: number | null;
+  saving: number;
+  createdAt: string;
+}): CouponHistoryRecord {
+  const saving = Number(row.saving) || 0;
+  return {
+    id: row.id,
+    customerName: row.customerName || "Customer",
+    customerInitials: couponInitials(row.customerName || "C"),
+    orderId: row.orderId || "—",
+    couponId: row.couponId,
+    date: formatCouponHistoryDate(row.createdAt),
+    branch: row.branch || "—",
+    orderTotal:
+      row.orderTotal == null ? "—" : formatEuro(String(row.orderTotal)),
+    saving: `-€${Math.abs(saving).toFixed(2)}`,
+    savingAmount: saving,
+  };
 }

@@ -50,9 +50,11 @@ export interface DashboardStat {
   logo: string;
 }
 
+export type DashboardCategory = "all" | "food" | "drinks";
+
 export type OrderStatus = "Pending" | "In-Progress" | "Ready" | "Completed";
 
-export type OrderPeriod = "now" | "weekly" | "monthly";
+export type OrderPeriod = "now" | "weekly" | "monthly" | "all";
 
 export interface OrderCustomization {
   name: string;
@@ -61,6 +63,7 @@ export interface OrderCustomization {
 
 export interface OrderItem {
   name: string;
+  productType?: "food" | "drinks";
   size?: string;
   unitPrice: number;
   quantity: number;
@@ -82,6 +85,13 @@ export interface Order {
   orderTime: string;
   orderDate: string;
   items: OrderItem[];
+  itemsSubtotal?: number;
+  redeemedPoints?: number;
+  loyaltyDiscount?: number;
+  earnedPoints?: number;
+  earnedPointsValue?: number;
+  couponDiscount?: number;
+  couponCode?: string;
 }
 
 export type SalesTab = "top-products" | "branch-performance";
@@ -384,7 +394,7 @@ export interface CouponRecord {
 }
 
 export interface CouponHistoryRecord {
-  id: number;
+  id: string;
   customerName: string;
   customerInitials: string;
   avatarUrl?: string;
@@ -394,6 +404,7 @@ export interface CouponHistoryRecord {
   branch: string;
   orderTotal: string;
   saving: string;
+  savingAmount: number;
 }
 
 export type LoyaltyTab = "history" | "settings";

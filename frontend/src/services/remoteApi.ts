@@ -4,12 +4,15 @@ import type {
   BranchRecord,
   BranchStatus,
   ComboOfferFormData,
+  CouponFormData,
+  CouponRecord,
   CustomizationFormData,
   CustomizationRecord,
   CustomizationStatus,
   Customer,
   ClosureReasonStat,
   DashboardStat,
+  DashboardCategory,
   OfferCatalogProduct,
   OfferRecord,
   OfferStatus,
@@ -32,8 +35,12 @@ import type {
 } from "@/types";
 
 // --- Dashboard ---
-export async function fetchDashboardStats(): Promise<DashboardStat[]> {
-  const data = await api.get<{ stats: DashboardStat[] }>("/api/dashboard/stats");
+export async function fetchDashboardStats(
+  category: DashboardCategory = "all"
+): Promise<DashboardStat[]> {
+  const data = await api.get<{ stats: DashboardStat[] }>(
+    `/api/dashboard/stats?category=${category}`
+  );
   return data.stats;
 }
 
@@ -180,6 +187,10 @@ export async function fetchOrders(params?: {
   if (params?.search) searchParams.set("search", params.search);
   const q = searchParams.toString();
   return api.get<Order[]>(`/api/orders${q ? `?${q}` : ""}`);
+}
+
+export async function fetchOrder(id: string) {
+  return api.get<Order>(`/api/orders/${id}`);
 }
 
 export async function fetchOrderStats(params?: {
@@ -341,6 +352,8 @@ type CustomerAccountApi = {
   phone?: string | null;
   authProvider?: string;
   createdAt?: string;
+  gender?: string | null;
+  dob?: string | null;
   orders?: number;
   spend?: number;
   branches?: CustomerAccountBranchApi[];
@@ -375,8 +388,10 @@ function mapCustomerAccount(account: CustomerAccountApi): Customer {
     orders: account.orders ?? 0,
     spend: formatEuro(account.spend ?? 0),
     status: "Active",
-    gender: "Not yet added",
-    dateOfBirth: "Not yet added",
+    gender: account.gender
+      ? account.gender.charAt(0).toUpperCase() + account.gender.slice(1)
+      : "Not yet added",
+    dateOfBirth: formatCustomerDate(account.dob || undefined) || "Not yet added",
     accountCreated: formatCustomerDate(account.createdAt),
     branches: (account.branches ?? []).map((b) => ({
       name: b.name,
@@ -390,6 +405,18 @@ function mapCustomerAccount(account: CustomerAccountApi): Customer {
 export async function fetchCustomers() {
   const accounts = await api.get<CustomerAccountApi[]>("/api/customers/accounts");
   return accounts.map(mapCustomerAccount);
+}
+
+export interface CustomerLoyalty {
+  cardName: string;
+  currentPoints: number;
+  totalRedeemed: number;
+  euroValue: number;
+  memberSince: number | null;
+}
+
+export async function fetchCustomerLoyalty(customerId: string) {
+  return api.get<CustomerLoyalty>(`/api/customers/${customerId}/loyalty`);
 }
 
 export async function fetchCustomerStatsFromList(customers: Customer[]) {
@@ -492,4 +519,70 @@ export async function fetchLoyaltyHistory(params?: {
   return api.get<{ items: LoyaltyHistoryRow[]; total: number; hasMore: boolean }>(
     `/api/loyalty/history${q ? `?${q}` : ""}`
   );
+}
+
+// --- Coupons ---
+export interface CouponHistoryApiRow {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  orderId: string;
+  couponId: string;
+  branch: string;
+  orderTotal: number | null;
+  saving: number;
+  createdAt: string;
+}
+
+export async function fetchCoupons(params?: {
+  search?: string;
+  status?: string;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.search) searchParams.set("search", params.search);
+  if (params?.status && params.status !== "all" && params.status !== "Expired") {
+    searchParams.set("status", params.status);
+  }
+  const q = searchParams.toString();
+  return api.get<CouponRecord[]>(`/api/coupons${q ? `?${q}` : ""}`);
+}
+
+export async function fetchCouponHistory(params?: {
+  branch?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.branch && params.branch !== "all") {
+    searchParams.set("branch", params.branch);
+  }
+  if (params?.search) searchParams.set("search", params.search);
+  if (params?.page) searchParams.set("page", String(params.page));
+  if (params?.limit) searchParams.set("limit", String(params.limit));
+  const q = searchParams.toString();
+  return api.get<{
+    items: CouponHistoryApiRow[];
+    total: number;
+    hasMore: boolean;
+  }>(`/api/coupons/history${q ? `?${q}` : ""}`);
+}
+
+export async function createCoupon(form: CouponFormData) {
+  return api.post<CouponRecord>("/api/coupons", form);
+}
+
+export async function updateCoupon(id: number, form: CouponFormData) {
+  return api.put<CouponRecord>(`/api/coupons/${id}`, form);
+}
+
+export async function deleteCoupon(id: number) {
+  return api.delete(`/api/coupons/${id}`);
+}
+
+export async function updateCouponStatus(
+  id: number,
+  status: "Active" | "Inactive"
+) {
+  return api.patch<CouponRecord>(`/api/coupons/${id}/status`, { status });
 }
