@@ -11,9 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import SelectBranchModal from "@/components/models/SelectBranchModal";
 import { EMPTY_PRODUCT_FORM } from "@/services/productService";
 import { ApiError, uploadImageFile } from "@/lib/api";
-import type { ProductFormData, ProductRecord } from "@/types";
+import { fetchBranches } from "@/services/remoteApi";
+import type { BranchRecord, ProductFormData, ProductRecord } from "@/types";
 
 interface ProductFormModalProps {
   open: boolean;
@@ -35,11 +37,16 @@ export default function ProductFormModal({
   const [form, setForm] = useState<ProductFormData>(EMPTY_PRODUCT_FORM);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
+  const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setError("");
+    fetchBranches()
+      .then(setBranches)
+      .catch(() => setBranches([]));
     if (mode === "edit" && product) {
       setForm({
         name: product.name,
@@ -47,6 +54,7 @@ export default function ProductFormModal({
         price: product.price.replace(/^€\s?/, ""),
         description: product.description,
         image: product.image,
+        branchIds: product.branchIds ?? [],
       });
     } else {
       setForm({ ...EMPTY_PRODUCT_FORM });
@@ -104,17 +112,22 @@ export default function ProductFormModal({
       setError("Please fill Product name, Sub Category and Price.");
       return;
     }
+    if (!form.branchIds.length) {
+      setError("Please select at least one branch.");
+      return;
+    }
     setError("");
     onSaveRequest(form);
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[min(92vh,640px)] w-[min(92vw,420px)] overflow-hidden rounded-3xl border-none p-0 shadow-xl"
+        className="max-h-[min(92vh,720px)] w-[min(92vw,420px)] overflow-hidden rounded-3xl border-none p-0 shadow-xl"
       >
-        <div className="flex max-h-[min(92vh,640px)] flex-col gap-2.5 overflow-hidden p-4 sm:p-5">
+        <div className="flex max-h-[min(92vh,720px)] flex-col gap-2.5 overflow-y-auto p-4 sm:p-5">
           <DialogHeader className="shrink-0 flex-row items-center justify-between space-y-0">
             <DialogTitle className="text-lg font-bold text-[#00562C]">
               {mode === "create" ? "Add Food" : "Edit Food"}
@@ -211,6 +224,21 @@ export default function ProductFormModal({
             </div>
           </Field>
 
+          <Field label="Select Branch">
+            <button
+              type="button"
+              onClick={() => setBranchPickerOpen(true)}
+              className="relative flex h-9 w-full items-center rounded-xl bg-[#F2F2F3] px-3 pr-9 text-left text-sm outline-none"
+            >
+              <span className={form.branchIds.length ? "text-gray-900" : "text-gray-400"}>
+                {form.branchIds.length
+                  ? `${form.branchIds.length} Branch selected`
+                  : "Select"}
+              </span>
+              <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
+            </button>
+          </Field>
+
           <Field label="Price">
             <div className="relative">
               <span className="absolute top-1/2 left-3 -translate-y-1/2 text-sm text-gray-500">
@@ -247,6 +275,14 @@ export default function ProductFormModal({
         </div>
       </DialogContent>
     </Dialog>
+      <SelectBranchModal
+        open={branchPickerOpen}
+        branches={branches}
+        selectedIds={form.branchIds}
+        onOpenChange={setBranchPickerOpen}
+        onConfirm={(ids) => updateField("branchIds", ids)}
+      />
+    </>
   );
 }
 

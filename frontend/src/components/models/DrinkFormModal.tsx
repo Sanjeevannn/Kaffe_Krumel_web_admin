@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import SelectBranchModal from "@/components/models/SelectBranchModal";
 import { cn } from "@/lib/utils";
 import {
   createEmptyInclusive,
@@ -19,8 +20,9 @@ import {
   EMPTY_PRODUCT_FORM,
 } from "@/services/productService";
 import { ApiError, uploadImageFile } from "@/lib/api";
-import { fetchCustomizations } from "@/services/remoteApi";
+import { fetchBranches, fetchCustomizations } from "@/services/remoteApi";
 import type {
+  BranchRecord,
   CustomizationRecord,
   DrinkInclusiveItem,
   DrinkSizeOption,
@@ -66,6 +68,8 @@ export default function DrinkFormModal({
   const [customizations, setCustomizations] = useState<CustomizationRecord[]>(
     []
   );
+  const [branches, setBranches] = useState<BranchRecord[]>([]);
+  const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -89,12 +93,17 @@ export default function DrinkFormModal({
                       : [createEmptyInclusive()],
                   }))
                 : [createEmptySize(1)],
+            branchIds: product.branchIds ?? [],
           }
         : {
             ...EMPTY_PRODUCT_FORM,
             sizes: [createEmptySize(1)],
           }
     );
+
+    fetchBranches()
+      .then(setBranches)
+      .catch(() => setBranches([]));
 
     fetchCustomizations({ status: "Active" })
       .then(setCustomizations)
@@ -197,6 +206,10 @@ export default function DrinkFormModal({
         setError("Please add an image, Product name and Sub Category.");
         return;
       }
+      if (!form.branchIds.length) {
+        setError("Please select at least one branch.");
+        return;
+      }
       if (form.image.startsWith("blob:")) {
         setError("Image upload incomplete. Please select the image again.");
         return;
@@ -228,6 +241,7 @@ export default function DrinkFormModal({
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
@@ -347,6 +361,21 @@ export default function DrinkFormModal({
                   </select>
                   <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
                 </div>
+              </Field>
+
+              <Field label="Select Branch">
+                <button
+                  type="button"
+                  onClick={() => setBranchPickerOpen(true)}
+                  className="relative flex h-9 w-full items-center rounded-xl bg-[#F2F2F3] px-3 pr-9 text-left text-sm outline-none"
+                >
+                  <span className={form.branchIds.length ? "text-gray-900" : "text-gray-400"}>
+                    {form.branchIds.length
+                      ? `${form.branchIds.length} Branch selected`
+                      : "Select"}
+                  </span>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
+                </button>
               </Field>
             </div>
           ) : (
@@ -620,6 +649,14 @@ export default function DrinkFormModal({
         </div>
       </DialogContent>
     </Dialog>
+      <SelectBranchModal
+        open={branchPickerOpen}
+        branches={branches}
+        selectedIds={form.branchIds}
+        onOpenChange={setBranchPickerOpen}
+        onConfirm={(ids) => updateField("branchIds", ids)}
+      />
+    </>
   );
 }
 

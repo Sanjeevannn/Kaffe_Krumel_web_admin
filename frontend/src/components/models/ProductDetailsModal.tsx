@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { FileText, X } from "lucide-react";
 import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import SelectedBranchesPanel from "@/components/models/SelectedBranchesPanel";
 import { cn } from "@/lib/utils";
+import { fetchBranches } from "@/services/remoteApi";
 import type { ProductRecord, ProductStatus } from "@/types";
 
 interface ProductDetailsModalProps {
@@ -31,6 +34,19 @@ export default function ProductDetailsModal({
   onDelete,
   onToggleStatus,
 }: ProductDetailsModalProps) {
+  const [tab, setTab] = useState<"view" | "branches">("view");
+  const [totalBranches, setTotalBranches] = useState(0);
+
+  useEffect(() => {
+    if (!open) {
+      setTab("view");
+      return;
+    }
+    fetchBranches()
+      .then((list) => setTotalBranches(list.length))
+      .catch(() => setTotalBranches(product?.branches?.length ?? 0));
+  }, [open, product]);
+
   if (!product) return null;
 
   const isActive = product.status === "Active";
@@ -42,9 +58,9 @@ export default function ProductDetailsModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-h-[90vh] max-w-lg overflow-hidden rounded-3xl border-none p-0 shadow-xl"
+        className="flex max-h-[90dvh] max-w-lg flex-col gap-0 overflow-hidden rounded-3xl border-none p-0 shadow-xl sm:p-0"
       >
-        <div className="max-h-[90vh] space-y-4 overflow-y-auto p-4 sm:p-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 pb-8 sm:p-6 sm:pb-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <DialogHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
             <div className="flex flex-wrap items-center gap-3">
               <DialogTitle className="text-xl font-bold text-gray-900">
@@ -119,6 +135,44 @@ export default function ProductDetailsModal({
             </div>
           </DialogHeader>
 
+          <div className="flex rounded-full bg-[#F2F2F3] p-1">
+            <button
+              type="button"
+              onClick={() => setTab("view")}
+              className={cn(
+                "flex-1 rounded-full px-4 py-2 text-sm font-medium",
+                tab === "view"
+                  ? "bg-[#07C187] text-white"
+                  : "text-gray-600"
+              )}
+            >
+              View
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("branches")}
+              className={cn(
+                "flex-1 rounded-full px-4 py-2 text-sm font-medium",
+                tab === "branches"
+                  ? "bg-[#07C187] text-white"
+                  : "text-gray-600"
+              )}
+            >
+              Selected branch
+            </button>
+          </div>
+
+          {tab === "branches" ? (
+            <SelectedBranchesPanel
+              branches={product.branches ?? []}
+              totalCount={Math.max(
+                product.totalBranchCount ?? 0,
+                totalBranches,
+                product.branches?.length ?? 0
+              )}
+            />
+          ) : (
+            <>
           <div className="flex items-center justify-center rounded-2xl bg-[#F2F2F3] px-6 py-8">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -145,6 +199,8 @@ export default function ProductDetailsModal({
               <p>{product.description}</p>
             </div>
           </div>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

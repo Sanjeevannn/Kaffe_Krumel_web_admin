@@ -336,6 +336,12 @@ export interface ProductFormData {
   description: string;
   image: string;
   sizes?: DrinkSizeOption[];
+  branchIds: number[];
+}
+
+export interface ProductBranchInfo {
+  id: number;
+  name: string;
 }
 
 export interface ProductRecord {
@@ -348,6 +354,9 @@ export interface ProductRecord {
   image: string;
   status: ProductStatus;
   sizes?: DrinkSizeOption[];
+  branchIds?: number[];
+  branches?: ProductBranchInfo[];
+  totalBranchCount?: number;
 }
 
 export interface SubCategoryFormData {

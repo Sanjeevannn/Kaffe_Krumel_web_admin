@@ -70,6 +70,7 @@ export const EMPTY_PRODUCT_FORM: ProductFormData = {
   description: "",
   image: "",
   sizes: [createEmptySize(1)],
+  branchIds: [],
 };
 
 export const EMPTY_SUB_CATEGORY_FORM: SubCategoryFormData = {
