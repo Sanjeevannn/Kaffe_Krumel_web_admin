@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import {
   fetchCustomerLoyalty,
   type CustomerLoyalty,
@@ -81,6 +82,53 @@ export default function CustomerDetailsModal({
   const euroValue = loyalty?.euroValue ?? 0;
   const cardName = loyalty?.cardName || customer.name;
 
+  const handleDownloadCsv = () => {
+    const headers = [
+      "Customer name",
+      "Email",
+      "Phone",
+      "Account Created",
+      "Gender",
+      "Date of Birth",
+      "Status",
+      "Closure Reason",
+      "Current points",
+      "Total redeemed",
+      "Euro value",
+      "Member since",
+      "Branch",
+      "Area",
+      "Branch spend",
+      "Branch orders",
+    ];
+
+    const branchRows =
+      customer.branches?.length > 0
+        ? customer.branches
+        : [{ name: "", area: "", totalSpend: "", totalOrders: "" }];
+
+    const rows = branchRows.map((branch) => [
+      customer.name,
+      customer.email,
+      customer.phone,
+      customer.accountCreated,
+      customer.gender,
+      customer.dateOfBirth,
+      customer.status,
+      customer.closureReason ?? "",
+      isClosed ? "" : currentPoints,
+      isClosed ? "" : totalRedeemed,
+      isClosed ? "" : euroValue,
+      isClosed ? "" : memberYear,
+      branch.name,
+      branch.area,
+      branch.totalSpend,
+      branch.totalOrders,
+    ]);
+
+    downloadCsv(`customer-${customer.id}.csv`, headers, rows);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -103,7 +151,11 @@ export default function CustomerDetailsModal({
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
-              <Button className="h-9 rounded-lg bg-[#00562C] px-3 text-white hover:bg-[#004522]">
+              <Button
+                type="button"
+                onClick={handleDownloadCsv}
+                className="h-9 rounded-lg bg-[#00562C] px-3 text-white hover:bg-[#004522]"
+              >
                 <Download className="size-4" />
                 Download CSV
               </Button>

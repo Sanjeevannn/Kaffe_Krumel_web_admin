@@ -14,19 +14,19 @@ import {
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import StatCard from "@/components/dashboard/StatCard";
 import DeleteOrderDialog from "@/components/dialogs/DeleteOrderDialog";
-import OrderDetailsModal from "@/components/models/OrderDetailsModal";
+import PosOrderDetailsModal from "@/components/models/PosOrderDetailsModal";
 import ActionIcon from "@/components/ui/ActionIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/contexts/AuthContext";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
 import { downloadCsv } from "@/lib/csv";
 import { cn } from "@/lib/utils";
 import {
-  advanceOrderStatus,
-  deleteOrder,
+  deletePosOrder,
   fetchBranches,
-  fetchOrderStats,
-  fetchOrders,
+  fetchPosOrderStats,
+  fetchPosOrders,
 } from "@/services/remoteApi";
 import type { Order, OrderPeriod, OrderStats, OrderStatus, PosOrderType } from "@/types";
 
@@ -51,28 +51,15 @@ const TYPE_STYLES: Record<PosOrderType, string> = {
   Normal: "bg-[#2BBBAD] text-white",
 };
 
-const STATUS_STYLES: Record<OrderStatus, string> = {
-  Pending: "bg-gray-400 text-white",
-  "In-Progress": "bg-orange-500 text-white",
-  Ready: "bg-amber-400 text-white",
-  Completed: "bg-green-500 text-white",
-};
-
-const NEXT_STATUS: Record<OrderStatus, OrderStatus | null> = {
-  Pending: "In-Progress",
-  "In-Progress": "Ready",
-  Ready: "Completed",
-  Completed: null,
-};
-
-interface OrdersManagementProps {
+interface PosOrdersManagementProps {
   role?: "superadmin" | "admin";
 }
 
-export default function OrdersManagement({
+export default function PosOrdersManagement({
   role = "superadmin",
-}: OrdersManagementProps) {
+}: PosOrdersManagementProps) {
   const isSuperadmin = role === "superadmin";
+  const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [stats, setStats] = useState<OrderStats>({
     totalOrders: 0,
@@ -98,10 +85,11 @@ export default function OrdersManagement({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const filteredOrders = orders;
   const useDateFilter = period === "now";
+  const adminBranch = !isSuperadmin ? user?.branch : undefined;
 
   useEffect(() => {
+    if (!isSuperadmin) return;
     fetchBranches()
       .then((branches) =>
         setBranchOptions(
@@ -112,37 +100,61 @@ export default function OrdersManagement({
         )
       )
       .catch(() => setBranchOptions([]));
-  }, []);
+  }, [isSuperadmin]);
 
   useEffect(() => {
     async function load() {
       try {
+        const branch =
+          adminBranch ||
+          (branchFilter !== "all" ? branchFilter : undefined);
         const [orderList, orderStats] = await Promise.all([
-          fetchOrders({
+          fetchPosOrders({
             ...(useDateFilter ? { date: selectedDate } : { period }),
             status:
               statusFilter !== "all" ? (statusFilter as OrderStatus) : undefined,
-            branch: branchFilter !== "all" ? branchFilter : undefined,
+            branch,
             search: search.trim() || undefined,
           }),
-          fetchOrderStats({
+          fetchPosOrderStats({
             ...(useDateFilter ? { date: selectedDate } : { period }),
-            branch: branchFilter !== "all" ? branchFilter : undefined,
+            branch,
           }),
         ]);
         setOrders(orderList);
         setStats(orderStats);
       } catch (error) {
-        console.error("Failed to load orders", error);
+        console.error("Failed to load POS orders", error);
+        setOrders([]);
+        setStats({
+          totalOrders: 0,
+          pendingOrders: 0,
+          inProgressOrders: 0,
+          completedOrders: 0,
+          totalCustomers: 0,
+          productSold: "0",
+          todaysRevenue: "0.00 €",
+          weeklyRevenue: "0.00 €",
+          monthlyRevenue: "0.00 €",
+          totalRevenue: "0.00 €",
+        });
       }
     }
     load();
-  }, [period, selectedDate, useDateFilter, statusFilter, branchFilter, search]);
+  }, [
+    period,
+    selectedDate,
+    useDateFilter,
+    statusFilter,
+    branchFilter,
+    search,
+    adminBranch,
+  ]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const startIndex = (safePage - 1) * PAGE_SIZE;
-  const pageOrders = filteredOrders.slice(startIndex, startIndex + PAGE_SIZE);
+  const pageOrders = orders.slice(startIndex, startIndex + PAGE_SIZE);
 
   const handlePeriodChange = (next: OrderPeriod) => {
     setPeriod(next);
@@ -158,7 +170,7 @@ export default function OrdersManagement({
 
   const handleDelete = async (orderId: string) => {
     try {
-      await deleteOrder(orderId);
+      await deletePosOrder(orderId);
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
       setViewOrder(null);
       setDetailsOpen(false);
@@ -166,18 +178,6 @@ export default function OrdersManagement({
       setDeleteOrderId(null);
     } catch (error) {
       console.error("Failed to delete order", error);
-    }
-  };
-
-  const handleAdvanceStatus = async (orderId: string) => {
-    try {
-      const updated = await advanceOrderStatus(orderId);
-      setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? updated : o))
-      );
-      setViewOrder((prev) => (prev?.id === orderId ? updated : prev));
-    } catch (error) {
-      console.error("Failed to advance order status", error);
     }
   };
 
@@ -193,75 +193,33 @@ export default function OrdersManagement({
 
   const handleDownloadCsv = () => {
     const headers = isSuperadmin
-      ? [
-          "Order ID",
-          "Customer name",
-          "Branch",
-          "Email",
-          "Item",
-          "Amount",
-          "Type",
-          "Status",
-        ]
-      : [
-          "Order ID",
-          "Customer name",
-          "Email",
-          "Item",
-          "Amount",
-          "Status",
-        ];
+      ? ["Order ID", "Branch", "Item", "Amount", "Type"]
+      : ["Order ID", "Item", "Amount", "Type"];
 
-    const rows = filteredOrders.map((order) => {
-      const base = [
-        order.id,
-        order.customerName,
-        ...(isSuperadmin ? [order.branch] : []),
-        order.email,
-        order.itemCount,
-        order.amount.toFixed(2),
-        ...(isSuperadmin ? [resolveOrderType(order)] : []),
-        order.status,
-      ];
-      return base;
+    const rows = orders.map((order) => {
+      const orderType = resolveOrderType(order);
+      return isSuperadmin
+        ? [
+            order.id,
+            order.branch,
+            order.itemCount,
+            order.amount.toFixed(2),
+            orderType,
+          ]
+        : [order.id, order.itemCount, order.amount.toFixed(2), orderType];
     });
 
     downloadCsv(
-      `orders-${new Date().toISOString().slice(0, 10)}.csv`,
+      `pos-orders-${new Date().toISOString().slice(0, 10)}.csv`,
       headers,
       rows
     );
   };
 
-  const showingFrom = filteredOrders.length === 0 ? 0 : startIndex + 1;
-  const showingTo = Math.min(startIndex + PAGE_SIZE, filteredOrders.length);
+  const showingFrom = orders.length === 0 ? 0 : startIndex + 1;
+  const showingTo = Math.min(startIndex + PAGE_SIZE, orders.length);
 
-  const orderStatCards = [
-    {
-      label: "Total orders",
-      value: String(stats.totalOrders),
-      logo: `${DASHBOARD_ICONS_PATH}/pending_orders.svg`,
-    },
-    {
-      label: "Pending orders",
-      value: String(stats.pendingOrders),
-      logo: `${DASHBOARD_ICONS_PATH}/pending_orders.svg`,
-    },
-    {
-      label: "In progress Orders",
-      value: String(stats.inProgressOrders),
-      logo: `${DASHBOARD_ICONS_PATH}/pending_orders.svg`,
-    },
-    {
-      label: "Completed Orders",
-      value: String(stats.completedOrders),
-      logo: `${DASHBOARD_ICONS_PATH}/pending_orders.svg`,
-    },
-    {
-      label: "Total Customers",
-      value: String(stats.totalCustomers),
-      logo: `${DASHBOARD_ICONS_PATH}/total_users.svg`,
-    },
+  const posStatCards = [
     {
       label: "Product Sold",
       value: stats.productSold,
@@ -291,7 +249,7 @@ export default function OrdersManagement({
 
   return (
     <>
-      <DashboardHeader title="Order management" />
+      <DashboardHeader title="POS order management" />
 
       {isSuperadmin && (
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -303,7 +261,7 @@ export default function OrdersManagement({
             }}
             className="h-11 rounded-full border-none bg-white px-4 text-sm shadow-sm outline-none"
           >
-            <option value="all">All Branches</option>
+            <option value="all">All Branch</option>
             {branchOptions.map((b) => (
               <option key={b} value={b}>
                 {b}
@@ -322,18 +280,17 @@ export default function OrdersManagement({
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
-        {orderStatCards.map((stat) => (
+        {posStatCards.map((stat) => (
           <StatCard key={stat.label} {...stat} />
         ))}
       </div>
 
-      {/* Filters + Table — #F2F2F3 container, white table */}
       <div className="overflow-hidden rounded-2xl bg-[#F2F2F3] p-4">
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <div className="flex rounded-full bg-white p-1">
             {(
               [
-                { key: "now", label: "Daily" },
+                { key: "now", label: "Now" },
                 { key: "weekly", label: "Weekly" },
                 { key: "monthly", label: "Monthly" },
               ] as const
@@ -410,21 +367,21 @@ export default function OrdersManagement({
 
         <div className="overflow-hidden rounded-xl bg-white">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table
+              className={cn(
+                "w-full text-left text-sm",
+                isSuperadmin ? "min-w-[900px]" : "min-w-[700px]"
+              )}
+            >
               <thead>
                 <tr className="border-b-2 border-[#F2F2F3] bg-white text-gray-500">
                   <th className="px-4 py-3 font-medium">Order ID</th>
-                  <th className="px-4 py-3 font-medium">Customer name</th>
                   {isSuperadmin && (
                     <th className="px-4 py-3 font-medium">Branch</th>
                   )}
-                  <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Item</th>
                   <th className="px-4 py-3 font-medium">Amount</th>
-                  {isSuperadmin && (
-                    <th className="px-4 py-3 font-medium">Type</th>
-                  )}
-                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Action</th>
                 </tr>
               </thead>
@@ -432,7 +389,7 @@ export default function OrdersManagement({
                 {pageOrders.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={isSuperadmin ? 9 : 7}
+                      colSpan={isSuperadmin ? 6 : 5}
                       className="bg-white px-4 py-10 text-center text-gray-500"
                     >
                       No orders found for this filter.
@@ -442,30 +399,24 @@ export default function OrdersManagement({
                   pageOrders.map((order) => {
                     const orderType = resolveOrderType(order);
                     return (
-                    <tr
-                      key={order.id}
-                      className="border-b-2 border-[#F2F2F3] bg-white hover:bg-gray-50/80"
-                    >
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        {order.id}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex size-8 items-center justify-center rounded-full bg-[#e8f5ee] text-xs font-semibold text-[#00562C]">
-                            {order.customerInitials}
-                          </div>
-                          <span className="text-gray-900">{order.customerName}</span>
-                        </div>
-                      </td>
-                      {isSuperadmin && (
-                        <td className="px-4 py-3 text-gray-700">{order.branch}</td>
-                      )}
-                      <td className="px-4 py-3 text-gray-700">{order.email}</td>
-                      <td className="px-4 py-3 text-gray-700">{order.itemCount}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">
-                        {order.amount.toFixed(2)} €
-                      </td>
-                      {isSuperadmin && (
+                      <tr
+                        key={order.id}
+                        className="border-b-2 border-[#F2F2F3] bg-white hover:bg-gray-50/80"
+                      >
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          {order.id}
+                        </td>
+                        {isSuperadmin && (
+                          <td className="px-4 py-3 text-gray-700">
+                            {order.branch}
+                          </td>
+                        )}
+                        <td className="px-4 py-3 text-gray-700">
+                          {order.itemCount}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-900">
+                          € {order.amount.toFixed(2)}
+                        </td>
                         <td className="px-4 py-3">
                           <span
                             className={cn(
@@ -476,38 +427,27 @@ export default function OrdersManagement({
                             {orderType}
                           </span>
                         </td>
-                      )}
-                      <td className="px-4 py-3">
-                        <span
-                          className={cn(
-                            "inline-flex rounded-full px-3 py-1 text-xs font-medium",
-                            STATUS_STYLES[order.status]
-                          )}
-                        >
-                          {order.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openView(order)}
-                            className="flex size-8 items-center justify-center rounded-full text-[#00562C] hover:bg-[#e8f5ee]"
-                            aria-label={`View ${order.id}`}
-                          >
-                            <Eye className="size-5 text-[#00562C]" />
-                          </button>
-                          {isSuperadmin && (
-                            <ActionIcon
-                              type="delete"
-                              size={18}
-                              onClick={() => openDelete(order.id)}
-                              label={`Delete ${order.id}`}
-                            />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openView(order)}
+                              className="flex size-8 items-center justify-center rounded-full text-[#00562C] hover:bg-[#e8f5ee]"
+                              aria-label={`View ${order.id}`}
+                            >
+                              <Eye className="size-5 text-[#00562C]" />
+                            </button>
+                            {isSuperadmin && (
+                              <ActionIcon
+                                type="delete"
+                                size={18}
+                                onClick={() => openDelete(order.id)}
+                                label={`Delete ${order.id}`}
+                              />
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })
                 )}
@@ -518,8 +458,7 @@ export default function OrdersManagement({
           <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-[#F2F2F3] bg-white px-4 py-3">
             <p className="text-sm text-gray-500">
               Showing {String(showingFrom).padStart(2, "0")}-
-              {String(showingTo).padStart(2, "0")} of {filteredOrders.length}{" "}
-              Orders
+              {String(showingTo).padStart(2, "0")} of {orders.length} Orders
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -562,19 +501,15 @@ export default function OrdersManagement({
         </div>
       </div>
 
-      <OrderDetailsModal
+      <PosOrderDetailsModal
         open={detailsOpen}
         onOpenChange={setDetailsOpen}
-        role={role}
         order={
           viewOrder
             ? orders.find((o) => o.id === viewOrder.id) ?? viewOrder
             : null
         }
-        onDelete={(id) => {
-          openDelete(id);
-        }}
-        onAdvanceStatus={handleAdvanceStatus}
+        onDelete={(id) => openDelete(id)}
       />
 
       <DeleteOrderDialog

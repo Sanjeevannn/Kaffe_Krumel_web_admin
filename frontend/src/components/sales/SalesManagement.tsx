@@ -16,8 +16,9 @@ import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import StatCard from "@/components/dashboard/StatCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
+import { downloadCsv } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 import {
   fetchBranchPerformance,
   fetchBranches,
@@ -226,6 +227,35 @@ export default function SalesManagement({
 
   const resetPage = () => setCurrentPage(1);
 
+  const handleDownloadCsv = () => {
+    if (isProductsTab) {
+      downloadCsv(
+        `sales-products-${new Date().toISOString().slice(0, 10)}.csv`,
+        ["Item Name", "Category", "Sub Category", "Branch", "Unit", "Revenue"],
+        filteredProducts.map((p) => [
+          p.name,
+          p.category,
+          p.subCategory,
+          p.branch,
+          p.unit,
+          p.revenue.toFixed(2),
+        ])
+      );
+      return;
+    }
+
+    downloadCsv(
+      `branch-sales-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Branch", "Area", "Total Revenue", "Total Orders"],
+      filteredBranches.map((b) => [
+        b.name,
+        b.area,
+        b.totalRevenue,
+        b.totalOrders,
+      ])
+    );
+  };
+
   return (
     <>
       <DashboardHeader title="Sales management" />
@@ -256,7 +286,11 @@ export default function SalesManagement({
           </select>
           <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
         </div>
-        <Button className="h-10 rounded-full bg-[#00562C] px-5 text-white hover:bg-[#004522]">
+        <Button
+          type="button"
+          onClick={handleDownloadCsv}
+          className="h-10 rounded-full bg-[#00562C] px-5 text-white hover:bg-[#004522]"
+        >
           <Download className="size-4" />
           Download CSV
         </Button>

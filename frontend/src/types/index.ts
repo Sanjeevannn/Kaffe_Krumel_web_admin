@@ -34,6 +34,7 @@ export type NavIcon =
   | "star"
   | "chart-line"
   | "clipboard-list"
+  | "monitor"
   | "store"
   | "users"
   | "user-round";
@@ -55,6 +56,8 @@ export type DashboardCategory = "all" | "food" | "drinks";
 export type OrderStatus = "Pending" | "In-Progress" | "Ready" | "Completed";
 
 export type OrderPeriod = "now" | "weekly" | "monthly" | "all";
+
+export type PosOrderType = "Combo Offer" | "Normal";
 
 export interface OrderCustomization {
   name: string;
@@ -92,6 +95,7 @@ export interface Order {
   earnedPointsValue?: number;
   couponDiscount?: number;
   couponCode?: string;
+  orderType?: PosOrderType | "combo" | "normal";
 }
 
 export type SalesTab = "top-products" | "branch-performance";

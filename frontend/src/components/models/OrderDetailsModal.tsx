@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { downloadCsv } from "@/lib/csv";
 import { fetchOrder } from "@/services/remoteApi";
 import type { Order, OrderItem, OrderStatus } from "@/types";
 
@@ -119,6 +120,65 @@ export default function OrderDetailsModal({
   const finalSubtotal = roundMoney(activeOrder.amount);
   const hasDiscounts = couponDiscount > 0 || loyaltyDiscount > 0;
 
+  const handleDownloadCsv = () => {
+    const headers = [
+      "Order ID",
+      "Branch",
+      "Customer name",
+      "Email",
+      "Order date",
+      "Order time",
+      "Status",
+      "Item name",
+      "Size",
+      "Unit price",
+      "Quantity",
+      "Customizations",
+      "Item total",
+      "Order amount",
+    ];
+    const rows =
+      activeOrder.items.length > 0
+        ? activeOrder.items.map((item) => [
+            activeOrder.id,
+            activeOrder.branch,
+            activeOrder.customerName,
+            activeOrder.email,
+            activeOrder.orderDate,
+            activeOrder.orderTime,
+            activeOrder.status,
+            item.name,
+            item.size ?? "",
+            item.unitPrice.toFixed(2),
+            item.quantity,
+            (item.customizations ?? [])
+              .map((c) => `${c.name} (+${c.price.toFixed(2)})`)
+              .join("; "),
+            item.total.toFixed(2),
+            activeOrder.amount.toFixed(2),
+          ])
+        : [
+            [
+              activeOrder.id,
+              activeOrder.branch,
+              activeOrder.customerName,
+              activeOrder.email,
+              activeOrder.orderDate,
+              activeOrder.orderTime,
+              activeOrder.status,
+              "",
+              "",
+              "",
+              activeOrder.itemCount,
+              "",
+              "",
+              activeOrder.amount.toFixed(2),
+            ],
+          ];
+
+    downloadCsv(`order-${activeOrder.id}.csv`, headers, rows);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -137,7 +197,11 @@ export default function OrderDetailsModal({
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2 self-end sm:self-auto">
-              <Button className="h-9 rounded-lg bg-[#00562C] px-3 text-white hover:bg-[#004522]">
+              <Button
+                type="button"
+                onClick={handleDownloadCsv}
+                className="h-9 rounded-lg bg-[#00562C] px-3 text-white hover:bg-[#004522]"
+              >
                 <Download className="size-4" />
                 Download CSV
               </Button>

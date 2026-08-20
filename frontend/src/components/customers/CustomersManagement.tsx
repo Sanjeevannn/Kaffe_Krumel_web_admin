@@ -17,8 +17,9 @@ import StatCard from "@/components/dashboard/StatCard";
 import CustomerDetailsModal from "@/components/models/CustomerDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import { DASHBOARD_ICONS_PATH } from "@/lib/constants";
+import { downloadCsv } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 import {
   fetchBranches,
   fetchClosureAnalysis,
@@ -117,6 +118,30 @@ export default function CustomersManagement() {
 
   const resetPage = () => setCurrentPage(1);
 
+  const handleDownloadCsv = () => {
+    if (tab === "closure-analysis") {
+      downloadCsv(
+        `closure-analysis-${new Date().toISOString().slice(0, 10)}.csv`,
+        ["Reason", "Count"],
+        closureReasons.map((row) => [row.reason, row.count])
+      );
+      return;
+    }
+
+    downloadCsv(
+      `customers-${new Date().toISOString().slice(0, 10)}.csv`,
+      ["Customer name", "Email", "Phone number", "Orders", "Spend", "Status"],
+      filteredCustomers.map((c) => [
+        c.name,
+        c.email,
+        c.phone,
+        c.orders,
+        c.spend,
+        c.status,
+      ])
+    );
+  };
+
   const statCards = [
     {
       label: "Total Customers",
@@ -156,7 +181,11 @@ export default function CustomersManagement() {
           </select>
           <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
         </div>
-        <Button className="h-10 rounded-full bg-[#00562C] px-5 text-white hover:bg-[#004522]">
+        <Button
+          type="button"
+          onClick={handleDownloadCsv}
+          className="h-10 rounded-full bg-[#00562C] px-5 text-white hover:bg-[#004522]"
+        >
           <Download className="size-4" />
           Download CSV
         </Button>

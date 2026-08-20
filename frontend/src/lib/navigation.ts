@@ -10,6 +10,7 @@ export const SUPERADMIN_NAV: NavItem[] = [
   { label: "Coupon", href: "/superadmin/coupon", icon: "ticket-percent" },
   { label: "Sales", href: "/superadmin/sales", icon: "chart-line" },
   { label: "Orders", href: "/superadmin/orders", icon: "clipboard-list" },
+  { label: "POS Orders", href: "/superadmin/pos-orders", icon: "monitor" },
   { label: "Branch", href: "/superadmin/branch", icon: "store" },
   { label: "Users", href: "/superadmin/users", icon: "users" },
   { label: "Customers", href: "/superadmin/customers", icon: "user-round" },
@@ -23,6 +24,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: "Coupon", href: "/admin/coupon", icon: "ticket-percent" },
   { label: "Sales", href: "/admin/sales", icon: "chart-line" },
   { label: "Orders", href: "/admin/orders", icon: "clipboard-list" },
+  { label: "POS Orders", href: "/admin/pos-orders", icon: "monitor" },
 ];
 
 export const DASHBOARD_STATS: DashboardStat[] = [

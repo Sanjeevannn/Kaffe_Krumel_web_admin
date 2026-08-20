@@ -214,6 +214,45 @@ export async function deleteOrder(id: string) {
   return api.delete(`/api/orders/${id}`);
 }
 
+// --- POS Orders (separate collection) ---
+export async function fetchPosOrders(params?: {
+  period?: OrderPeriod;
+  date?: string;
+  status?: OrderStatus;
+  branch?: string;
+  search?: string;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.date) searchParams.set("date", params.date);
+  else if (params?.period) searchParams.set("period", params.period);
+  if (params?.status) searchParams.set("status", params.status);
+  if (params?.branch) searchParams.set("branch", params.branch);
+  if (params?.search) searchParams.set("search", params.search);
+  const q = searchParams.toString();
+  return api.get<Order[]>(`/api/pos-orders${q ? `?${q}` : ""}`);
+}
+
+export async function fetchPosOrder(id: string) {
+  return api.get<Order>(`/api/pos-orders/${id}`);
+}
+
+export async function fetchPosOrderStats(params?: {
+  period?: OrderPeriod;
+  date?: string;
+  branch?: string;
+}) {
+  const searchParams = new URLSearchParams();
+  if (params?.date) searchParams.set("date", params.date);
+  else if (params?.period) searchParams.set("period", params.period);
+  if (params?.branch) searchParams.set("branch", params.branch);
+  const q = searchParams.toString();
+  return api.get<OrderStats>(`/api/pos-orders/stats${q ? `?${q}` : ""}`);
+}
+
+export async function deletePosOrder(id: string) {
+  return api.delete(`/api/pos-orders/${id}`);
+}
+
 // --- Sales ---
 export async function fetchSalesStats(
   period: OrderPeriod = "now",

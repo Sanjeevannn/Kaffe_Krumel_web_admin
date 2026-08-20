@@ -14,6 +14,7 @@ import ComboOfferDetailsModal from "@/components/models/ComboOfferDetailsModal";
 import SingleOfferDetailsModal from "@/components/models/SingleOfferDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { downloadCsv } from "@/lib/csv";
 import { cn } from "@/lib/utils";
 import { OFFER_CATEGORIES } from "@/services/offerService";
 import {
@@ -142,6 +143,60 @@ export default function OfferManagement() {
     }
   };
 
+  const handleDownloadCsv = () => {
+    const branchName = (branchId?: number | null) =>
+      branches.find((b) => b.id === branchId)?.name ?? "";
+
+    if (tab === "single") {
+      downloadCsv(
+        `single-offers-${new Date().toISOString().slice(0, 10)}.csv`,
+        [
+          "Name",
+          "Category",
+          "Status",
+          "Branch",
+          "Validity From",
+          "Validity To",
+          "Offer Price",
+          "Original Price",
+        ],
+        filtered.map((o) => [
+          o.name,
+          o.category,
+          o.status,
+          branchName(o.branchId),
+          o.validityFrom,
+          o.validityTo,
+          o.offerPrice,
+          o.originalPrice ?? "",
+        ])
+      );
+      return;
+    }
+
+    downloadCsv(
+      `combo-offers-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        "Name",
+        "Status",
+        "Branch",
+        "Validity From",
+        "Validity To",
+        "Items Summary",
+        "Offer Price",
+      ],
+      filtered.map((o) => [
+        o.name,
+        o.status,
+        branchName(o.branchId),
+        o.validityFrom,
+        o.validityTo,
+        o.itemsSummary ?? "",
+        o.offerPrice,
+      ])
+    );
+  };
+
   return (
     <>
       <DashboardHeader title="Offer management" />
@@ -166,7 +221,11 @@ export default function OfferManagement() {
           </select>
           <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-gray-500" />
         </div>
-        <Button className="h-10 rounded-full bg-[#00562C] px-5 text-white hover:bg-[#004522]">
+        <Button
+          type="button"
+          onClick={handleDownloadCsv}
+          className="h-10 rounded-full bg-[#00562C] px-5 text-white hover:bg-[#004522]"
+        >
           <Download className="size-4" />
           Download CSV
         </Button>
